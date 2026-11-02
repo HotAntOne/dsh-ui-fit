@@ -1,5 +1,18 @@
 # 更新记录
 
+## 1.1.2
+
+**修复：重启 DSH 后插件整个消失**
+
+- 根因：`index.js` 里 `import z from '@deepseek-ai/schemastery'`，而本插件是用 `link:` 装进
+  profile 的。Node 会把入口解析成**真实路径**（源码目录），再从源码目录向上找 `node_modules`；
+  源码目录那条链上没有 `node_modules`，于是抛 `ERR_MODULE_NOT_FOUND`，Loader 把这一行标成
+  `inactive`。配置、`bundles`、`cordis.patch.yml` 全都正常，所以界面上看不出是缺依赖。
+- 修法：`package.json` 增加 `dependencies`（原来只在 `peerDependencies` 里声明），并新增
+  `npm run setup`（`ensure-deps.mjs`）自检脚本——解析不到时先尝试指向本机已装好的 profile，
+  仍不行就退出码 1 打印该跑的命令，不静默通过。
+- 顺带补了 README 的排查小节：装完发现插件消失，先跑 `npm run setup`。
+
 ## 1.1.1
 
 **输入条图标对齐宿主**

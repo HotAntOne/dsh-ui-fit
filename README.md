@@ -44,6 +44,23 @@ dsh plugin --profile web add /绝对路径/dsh-ui-fit
 > 本仓库同时是一个可发布的 npm 包，`npm publish` 之后也能 `dsh plugin --profile web add dsh-ui-fit`。
 > 发布前请先把 `package.json` 里的 `author` 改成你自己的名字。
 
+**装完发现插件"消失"了？先跑一次自检**
+
+本插件用 `link:` 方式装（方式三）时，Node 会先把入口解析成真实路径（源码目录），再从源码
+目录向上找 `node_modules`。如果源码目录那条链上没有 `node_modules`，`index.js` 里
+`import '@deepseek-ai/schemastery'` 就会失败，Loader 把这一行标成 `inactive`——**表现是
+插件整个不见**（页脚按钮、设置页都没了），但 `package.json`、`bundles`、`cordis.patch.yml`
+全都是好的，从界面上完全看不出是缺依赖。
+
+```bash
+cd /绝对路径/dsh-ui-fit && npm run setup
+```
+
+它做三件事：用 Node 的规则解析一次；解析不到就找本机已装好的 profile 链接过去（开发机
+自愈）；都不行退出码 1 并打印该跑的命令。**不会静默通过。**
+
+用 `dsh plugin add`（方式一、二）安装时 pnpm 会按 `dependencies` 正常装依赖，不需要这一步。
+
 ---
 
 ## 装完之后在哪

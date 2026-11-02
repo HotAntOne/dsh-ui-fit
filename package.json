@@ -1,6 +1,6 @@
 {
   "name": "dsh-ui-fit",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "One plugin for three switchable UI refinements in the DSH Web GUI: foldable left navigation, a tidier composer row, and phone-density compaction.",
   "type": "module",
   "main": "index.js",
@@ -43,7 +43,8 @@
     "LICENSE",
     "test-client.mjs",
     "check-hooks.mjs",
-    "lint-identifiers.mjs"
+    "lint-identifiers.mjs",
+    "ensure-deps.mjs"
   ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -70,7 +71,11 @@
   "scripts": {
     "check": "node --check client.js && node --check index.js",
     "test": "node lint-identifiers.mjs && node test-client.mjs && node check-hooks.mjs",
-    "check:hooks": "node check-hooks.mjs"
+    "check:hooks": "node check-hooks.mjs",
+    "setup": "node ensure-deps.mjs"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": ">=0.2.1-rc.5",
