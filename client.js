@@ -60,8 +60,6 @@ window.__ModuleLoader__.load({
     const TRIGGER_CLASS = 'dsh-fit-trigger'
     /** 三态持久化键（每浏览器）。 */
     const MODE_KEY = 'dsh-ui-fit:nav'
-    /** 旧插件的键，首次读取时迁移过来。 */
-    const LEGACY_MODE_KEY = 'dsh-sidebar-fold:mode'
     /** 三态循环。 */
     const MODES = ['standard', 'compact', 'fold']
     /** 输入条「窄行」阈值：低于它就收紧。 */
@@ -361,17 +359,11 @@ window.__ModuleLoader__.load({
      */
     let flagWriter = () => Promise.resolve(false)
 
-    /** 读三态，并把旧插件的键迁移过来。 */
+    /** 读三态。 */
     function readMode() {
       try {
         const raw = localStorage.getItem(MODE_KEY)
-        if (MODES.includes(raw)) return raw
-        const legacy = localStorage.getItem(LEGACY_MODE_KEY)
-        if (MODES.includes(legacy)) {
-          localStorage.setItem(MODE_KEY, legacy)
-          return legacy
-        }
-        return 'standard'
+        return MODES.includes(raw) ? raw : 'standard'
       } catch {
         return 'standard'
       }

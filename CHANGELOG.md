@@ -41,22 +41,32 @@
   `aria-checked` / `data-on` / `aria-label` 随状态翻转、点击写入本插件命名空间。
 - 补一条守卫断言：设置页样式不允许出现在任何开关的门控选择器下。
 
+## 1.1.3
+
+**清理：旧插件的痕迹全部移除**
+
+- 三个被合并的旧插件已从本机彻底卸载（profile 的 `dependencies`、`node_modules`、工作区源码、
+  源码备份全部删除），`dsh-ui-fit` 成为唯一实现。
+- 删掉 `client.js` 里的一次性迁移逻辑：早期版本会读旧插件的 localStorage 键把导航三态搬过来，
+  现在迁移窗口已关闭，这段代码和那个键名一并移除。
+- `lint-identifiers.mjs` 去掉「允许旧键名出现一次」的例外，旧插件的包名与属性名一个都不许留。
+- `test-client.mjs` 删掉重复的旧属性名守卫（`lint-identifiers.mjs` 已覆盖同一件事）。
+- README / CHANGELOG 里对旧插件包名的引用改成描述性表述。
+
 ## 1.0.0
 
-首个版本：把 `dsh-sidebar-fold`、`dsh-input-tidy`、`dsh-mobile-compact` 三个插件合并为一个。
+首个版本：把原本分散在三个独立插件里的界面调整合并为一个。
 
 **新增**
 
 - 三个功能开关（左栏导航 / 输入条 / 手机端密度），默认全开，行为与合并前一致。
   开关落在 profile 的 `cordis.patch.yml` 对应行，账号级、多设备一致。
 - 关掉某个开关时，那一段样式真的失效（摘掉对应的 `<html>` 门控属性），不是只藏按钮。
-- 导航三态从旧键 `dsh-sidebar-fold:mode` 自动迁移到 `dsh-ui-fit:nav`。
 - 地址后加 `#fit-debug` 可在页面底部显示输入条的真实测量值（行宽、是否窄行、三个开关状态）。
 
 **合并与修正**
 
-- 控件直径变量 `--dsh-tidy-ctl` 改名为 `--dsh-fit-ctl`，从「输入条插件定义、导航插件借用」
-  改为在样式表首行统一定义，消除跨插件耦合。
+- 控件直径变量统一为 `--dsh-fit-ctl`，在样式表首行定义，消除原本的跨插件耦合。
 - 门控属性统一为 `data-dsh-fit-*`：`nav` / `navmode` / `composer` / `tight` / `mobile`。
 - 槽位 id 改为 `dsh-ui-fit-nav` / `dsh-ui-fit-width` / `dsh-ui-fit-panels`。
 - 样式表仍是一张，顺序固定为「变量 → 导航 → 输入条 → 手机密度」，保持窄屏规则压过前两段。
