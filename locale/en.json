@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "UI Fit",
-    "description": "One plugin for three UI refinements: foldable left navigation, a tidier composer row, and phone-density compaction. Each block switches independently; turn one off and the host renders exactly as shipped."
+    "description": "One plugin for four UI refinements: foldable left navigation, a tidier composer row, phone-density compaction, and conversation width tiers. Each block switches independently; turn one off and the host renders exactly as shipped."
   }
 }

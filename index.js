@@ -20,7 +20,7 @@ import z from '@deepseek-ai/schemastery'
 /** 插件名，与 cordis.patch.yml 的行 id 一致。 */
 export const name = 'dsh-ui-fit'
 
-/** 三个功能开关；默认全开，与合并前的行为完全一致。 */
+/** 四个功能开关；默认全开，与合并前的行为完全一致。 */
 export const Config = z.object({
   nav: z
     .boolean()
@@ -46,6 +46,15 @@ export const Config = z.object({
       '手机端密度：只在窄屏（窗口宽度 ≤ 899 像素）生效。收起每轮费用与底部费用读数，' +
         '压缩消息操作行、顶部工具条、助手状态行和对话标签栏，把竖向空间还给对话本身。' +
         '桌面窗口下这一项不起作用。',
+    )
+    .volatile(),
+  width: z
+    .boolean()
+    .default(true)
+    .description(
+      '对话宽度：左栏底部再添一颗宽度入口，提供标准 / 中 / 宽 / 超宽 / 满宽 / 自定义六档，' +
+        '直接改对话区的内容宽度；拖动对话区两侧的手柄也会自动记成自定义。' +
+        '这一项由本插件自己实现，不再需要第三方宽度插件。',
     )
     .volatile(),
 })

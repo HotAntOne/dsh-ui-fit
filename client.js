@@ -5,9 +5,10 @@
  *
  * | 模块 | 开关属性 | 作用 |
  * |---|---|---|
- * | 左栏导航 | `data-dsh-fit-nav` | 三态折叠（标准/紧凑/收纳）、页脚切换按钮、宽度挡位入口 |
+ * | 左栏导航 | `data-dsh-fit-nav` | 三态折叠（标准/紧凑/收纳）、页脚切换按钮 |
  * | 输入条   | `data-dsh-fit-composer` | 藏语音键、徽章改图标、窄行收紧间距并铺满宽度 |
  * | 手机密度 | `data-dsh-fit-mobile` | 窄屏十组压缩规则 |
+ * | 对话宽度 | `data-dsh-fit-width` | 六档内容宽度 + 拖拽读数；自实现，不依赖第三方插件 |
  *
  * 三段开关来自 Host 半边的 `Config`（`ctx.configForms.get('dsh-ui-fit')`）。关掉某一段时
  * 直接摘掉它的门控属性，**该段的每一条规则随之失效**——不是把按钮藏起来，所以关掉就
@@ -68,13 +69,27 @@ window.__ModuleLoader__.load({
     const ROW_SELECTOR = '[data-composer-card] > [class*="_row"]'
     /** 手机密度断点。 */
     const MOBILE_QUERY = '(max-width: 899px)'
-    /** 宽度挡位插件自己的浮动按钮与菜单。 */
-    const WIDTH_TOGGLE_ID = 'dsh-wide-toggle'
-    const WIDTH_MENU_ID = 'dsh-width-menu'
+    /* ---------------- 自实现宽度轴 ---------------- */
+
     /** 宽度挡位 id 顺序。 */
     const TIER_IDS = ['standard', 'medium', 'wide', 'ultra', 'full', 'custom']
-    /** 宽度挡位写在 `<body>` 上的属性。 */
-    const TIER_ATTR = 'data-dsh-width'
+
+    /** 六档持久化键（每浏览器）。 */
+    const WIDTH_KEY = 'dsh-ui-fit:width'
+    /** 自定义档记住的像素值。 */
+    const WIDTH_CUSTOM_KEY = 'dsh-ui-fit:widthCustom'
+    /** 宿主自己的宽度偏好键：写它，宿主的拖拽手柄与重排都跟着走。 */
+    const APP_WIDTH_KEY = 'dsh.conversation.contentWidth'
+    /** 固定档的目标宽度。 */
+    const NOMINAL_WIDTH_PX = { medium: 1120, wide: 1280, ultra: 1400 }
+    /** 宿主的内容宽度下限，与 `resolveContentWidth` 保持一致。 */
+    const CONTENT_MIN = 640
+    /** 两侧拖拽手柄与安全边距占掉的横向空间。 */
+    const CONTENT_EDGE_BUDGET = 176
+    /** 宿主发布 `--dsh-chat-content-width` 的那个元素。 */
+    const WIDTH_ROOT_SELECTOR = '[data-conversation-content]'
+    /** 侧栏里的会话副本不算主对话区。 */
+    const WIDTH_SIDEBAR_SELECTOR = '[data-sidebar-chat]'
     /** 调试浮层：地址后加 `#fit-debug` 打开。 */
     const DEBUG_HASH = '#fit-debug'
 
@@ -96,31 +111,49 @@ window.__ModuleLoader__.load({
       '   导航图标、输入条按钮都读这一个数，改这里一处即可。 */',
       'html[data-dsh-fit] { --dsh-fit-ctl: clamp(28px, 1.5vw + 20px, 36px); }',
 
-      /* ---------------- ① 左栏导航 ---------------- */
-      'html[data-dsh-fit-nav="on"] .dsh-fit-trigger{box-sizing:border-box;display:inline-flex;flex:none;align-items:center;justify-content:center;width:var(--dsh-fit-ctl);height:var(--dsh-fit-ctl);margin:0 2px;padding:0;border:none;background:0 0;border-radius:999px;color:var(--dsw-alias-label-tertiary);cursor:pointer}',
-      'html[data-dsh-fit-nav="on"] .dsh-fit-trigger[data-mode="compact"]{color:var(--dsw-alias-label-secondary)}',
-      'html[data-dsh-fit-nav="on"] .dsh-fit-trigger[data-mode="fold"]{color:var(--dsw-alias-brand-primary)}',
-      'html[data-dsh-fit-nav="on"] .dsh-fit-trigger:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
-      'html[data-dsh-fit-nav="on"] .dsh-fit-trigger:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}',
-      'html[data-dsh-fit-nav="on"] .dsh-fit-glyph{display:inline-flex;flex:none;align-items:center;justify-content:center;width:calc(var(--dsh-fit-ctl)*0.5);height:calc(var(--dsh-fit-ctl)*0.5);color:currentColor}',
-      'html[data-dsh-fit-nav="on"] .dsh-fit-glyph svg{display:block;width:100%;height:100%}',
-      'html[data-dsh-fit-nav="on"] [data-dsh-fit-foot]{align-items:center;gap:2px;flex-wrap:wrap}',
-      'html[data-dsh-fit-nav="on"] [data-dsh-fit-foot] .dsh-mobile-control__trigger:not(.is-rail):not(:only-child){flex:0 0 var(--dsh-fit-ctl);width:var(--dsh-fit-ctl);min-width:var(--dsh-fit-ctl);height:var(--dsh-fit-ctl);margin:0 2px;padding:0;gap:0;justify-content:center;border:0;border-radius:999px;background:0 0}',
-      'html[data-dsh-fit-nav="on"] [data-dsh-fit-foot] .dsh-mobile-control__trigger-icon{width:calc(var(--dsh-fit-ctl)*0.5);height:calc(var(--dsh-fit-ctl)*0.5)}',
-      '/* 宽度挡位插件只渲染进 shell.overlay：藏掉它自己的浮动按钮，改由页脚那颗代理。 */',
-      'html[data-dsh-fit-nav="on"] #dsh-wide-toggle{position:fixed;left:-9999px;bottom:0;width:1px;height:1px;min-width:0;padding:0;border:0;opacity:0;pointer-events:none;box-shadow:none}',
-      'html[data-dsh-fit-nav="on"] #dsh-wide-toggle::after{display:none}',
-      'html[data-dsh-fit-nav="on"] #dsh-width-menu{right:auto;left:12px;bottom:132px;z-index:2147483000;pointer-events:auto}',
-      'html[data-dsh-fit-nav="on"][data-dsh-fit-width="off"] .dsh-fit-width{display:none}',
-      'html[data-dsh-fit-nav="on"] .dsh-fit-width svg{display:block}',
-      'html[data-dsh-fit-nav="on"] .dsh-fit-fallback-row{box-sizing:border-box;display:flex;align-items:center;width:100%;padding:8px 10px;border:none;background:0 0;border-radius:8px;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;text-align:left;cursor:pointer}',
-      'html[data-dsh-fit-nav="on"] .dsh-fit-fallback-row:hover{background:var(--dsw-alias-interactive-bg-hover)}',
-      'html[data-dsh-fit-nav="on"][data-dsh-fit-navmode="compact"] nav[data-dsh-fit-navlist]{gap:0;margin-bottom:4px}',
-      'html[data-dsh-fit-nav="on"][data-dsh-fit-navmode="compact"] nav[data-dsh-fit-navlist] button{min-height:30px;padding-top:4px;padding-bottom:4px}',
-      'html[data-dsh-fit-nav="on"][data-dsh-fit-navmode="fold"] nav[data-dsh-fit-navlist]{margin-bottom:6px}',
-      'html[data-dsh-fit-nav="on"][data-dsh-fit-navmode="fold"] nav[data-dsh-fit-navlist] button:not([aria-haspopup="menu"]){display:none}',
-      '/* 导航模块关掉时，两颗页脚按钮也一起消失，不留死按钮。 */',
-      'html:not([data-dsh-fit-nav="on"]) .dsh-fit-trigger{display:none}',
+      /* ---------------- ① 左栏导航 + 对话宽度（共用页脚按钮样式） ---------------- */
+      /* 两颗页脚按钮的公共外形挂根标记，不挂 nav 门控：关掉导航时宽度按钮还要在。 */
+      'html[data-dsh-fit] .dsh-fit-trigger{box-sizing:border-box;display:inline-flex;flex:none;align-items:center;justify-content:center;width:var(--dsh-fit-ctl);height:var(--dsh-fit-ctl);margin:0 2px;padding:0;border:none;background:0 0;border-radius:999px;color:var(--dsw-alias-label-tertiary);cursor:pointer}',
+      'html[data-dsh-fit] .dsh-fit-trigger[data-mode="compact"]{color:var(--dsw-alias-label-secondary)}',
+      'html[data-dsh-fit] .dsh-fit-trigger[data-mode="fold"]{color:var(--dsw-alias-brand-primary)}',
+      'html[data-dsh-fit] .dsh-fit-trigger[data-tier]:not([data-tier="standard"]){color:var(--dsw-alias-brand-primary)}',
+      'html[data-dsh-fit] .dsh-fit-trigger:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
+      'html[data-dsh-fit] .dsh-fit-trigger:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}',
+      'html[data-dsh-fit] .dsh-fit-glyph{display:inline-flex;flex:none;align-items:center;justify-content:center;width:calc(var(--dsh-fit-ctl)*0.5);height:calc(var(--dsh-fit-ctl)*0.5);color:currentColor}',
+      'html[data-dsh-fit] .dsh-fit-glyph svg{display:block;width:100%;height:100%}',
+      'html[data-dsh-fit] [data-dsh-fit-foot]{align-items:center;gap:2px;flex-wrap:wrap}',
+      'html[data-dsh-fit] [data-dsh-fit-foot] .dsh-mobile-control__trigger:not(.is-rail):not(:only-child){flex:0 0 var(--dsh-fit-ctl);width:var(--dsh-fit-ctl);min-width:var(--dsh-fit-ctl);height:var(--dsh-fit-ctl);margin:0 2px;padding:0;gap:0;justify-content:center;border:0;border-radius:999px;background:0 0}',
+      'html[data-dsh-fit] [data-dsh-fit-foot] .dsh-mobile-control__trigger-icon{width:calc(var(--dsh-fit-ctl)*0.5);height:calc(var(--dsh-fit-ctl)*0.5)}',
+      /*
+       * 与第三方宽度插件共存时的收尾：它的浮动按钮在右下角，本插件的入口在页脚，
+       * 两个按钮控制同一个宽度轴会互相打脸。这里把它的按钮压成不可见不可点，
+       * 只留本插件那一个入口。卸载它之后这几条规则自然失效，无需改动。
+       */
+      'html[data-dsh-fit] #dsh-wide-toggle{position:fixed;left:-9999px;bottom:0;width:1px;height:1px;min-width:0;padding:0;border:0;opacity:0;pointer-events:none;box-shadow:none}',
+      'html[data-dsh-fit] #dsh-wide-toggle::after{display:none}',
+      'html[data-dsh-fit] #dsh-width-menu{display:none}',
+      /* 自己实现的挡位菜单：定在侧栏页脚正上方，和页脚按钮同侧。 */
+      'html[data-dsh-fit] .dsh-fit-width-menu{position:fixed;left:12px;bottom:132px;z-index:2147483000;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;min-width:210px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-specific-menu);box-shadow:0 8px 28px rgba(0,0,0,.24)}',
+      'html[data-dsh-fit] .dsh-fit-width-item{display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box;width:100%;padding:8px 12px;border:none;border-radius:8px;background:0 0;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer}',
+      'html[data-dsh-fit] .dsh-fit-width-item:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+      'html[data-dsh-fit] .dsh-fit-width-item:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}',
+      'html[data-dsh-fit] .dsh-fit-width-item[aria-checked="true"]{color:var(--dsw-alias-brand-primary)}',
+      'html[data-dsh-fit] .dsh-fit-width-value{flex:none;font-size:12px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-tertiary)}',
+      'html[data-dsh-fit] .dsh-fit-width-item[aria-checked="true"] .dsh-fit-width-value{color:var(--dsw-alias-brand-primary)}',
+      /* 拖拽读数：跟着鼠标显示当前内容宽度。 */
+      'html[data-dsh-fit] .dsh-fit-width-guide{position:fixed;z-index:2147483001;padding:6px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-menu);color:var(--dsw-alias-label-primary);font-size:12px;line-height:16px;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none;transform:translateY(-50%);box-shadow:0 8px 28px rgba(0,0,0,.24)}',
+      'html[data-dsh-fit] .dsh-fit-width-menu[hidden],html[data-dsh-fit] .dsh-fit-width-guide[hidden]{display:none}',
+      /* 宽度段关掉时，入口、菜单、拖拽读数一起消失——不留点了没反应的死按钮。 */
+      'html[data-dsh-fit]:not([data-dsh-fit-width="on"]) .dsh-fit-width,html[data-dsh-fit]:not([data-dsh-fit-width="on"]) .dsh-fit-width-guide{display:none}',
+      'html[data-dsh-fit] .dsh-fit-width svg{display:block}',
+      'html[data-dsh-fit] .dsh-fit-fallback-row{box-sizing:border-box;display:flex;align-items:center;width:100%;padding:8px 10px;border:none;background:0 0;border-radius:8px;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;text-align:left;cursor:pointer}',
+      'html[data-dsh-fit] .dsh-fit-fallback-row:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+      'html[data-dsh-fit][data-dsh-fit-navmode="compact"] nav[data-dsh-fit-navlist]{gap:0;margin-bottom:4px}',
+      'html[data-dsh-fit][data-dsh-fit-navmode="compact"] nav[data-dsh-fit-navlist] button{min-height:30px;padding-top:4px;padding-bottom:4px}',
+      'html[data-dsh-fit][data-dsh-fit-navmode="fold"] nav[data-dsh-fit-navlist]{margin-bottom:6px}',
+      'html[data-dsh-fit][data-dsh-fit-navmode="fold"] nav[data-dsh-fit-navlist] button:not([aria-haspopup="menu"]){display:none}',
+      /* 导航模块关掉时，只有三态按钮消失；宽度按钮不受影响。 */
+      'html:not([data-dsh-fit-nav="on"]) .dsh-fit-trigger[data-mode]{display:none}',
 
       /* ---------------- ② 输入条 ---------------- */
       /* 输入条左下角的图标按钮统一按宿主自己的节奏走：宿主「+」与右侧两颗是
@@ -254,7 +287,8 @@ window.__ModuleLoader__.load({
         'menu.plugins': '插件管理',
         'menu.group': '全局面板',
         'width.aria': '对话区宽度',
-        'width.hint': '选择对话区宽度挡位',
+        'width.hint': '选择对话区宽度挡位（也可以直接拖对话区两侧的手柄）',
+        'width.menu': '对话区宽度挡位',
         'width.standard': '标准',
         'width.medium': '中',
         'width.wide': '宽',
@@ -262,7 +296,7 @@ window.__ModuleLoader__.load({
         'width.full': '满宽',
         'width.custom': '自定义',
         'settings.title': '界面精简',
-        'settings.description': '三块样式各管一处，关掉哪一块就立刻回到宿主原样，不用重启。',
+        'settings.description': '四块样式各管一处，关掉哪一块就立刻回到宿主原样，不用重启。',
         'settings.nav.title': '左栏导航折叠',
         'settings.nav.description':
           '在侧栏页脚加一颗三态按钮：标准 → 紧凑 → 收纳。收纳后所有面板行都进「更多」，仍然可达。',
@@ -272,8 +306,11 @@ window.__ModuleLoader__.load({
         'settings.mobile.title': '手机端密度压缩',
         'settings.mobile.description':
           '只在视口 ≤ 899px 时生效：压缩对话标签栏、操作行与状态行的高度，桌面上完全不动。',
+        'settings.width.title': '对话宽度挡位',
+        'settings.width.description':
+          '页脚加一颗宽度入口：标准 / 中 / 宽 / 超宽 / 满宽 / 自定义六档，拖动对话区两侧手柄也会自动记成自定义。不需要再装宽度插件。',
         'settings.storage':
-          '默认全部开启。开关写在本机 profile 的 dsh-ui-fit 配置段；导航三态另存在浏览器 localStorage 的 dsh-ui-fit:nav。',
+          '默认全部开启。开关写在本机 profile 的 dsh-ui-fit 配置段；导航三态存 localStorage 的 dsh-ui-fit:nav，宽度挡位存 dsh-ui-fit:width。',
         'settings.failed': '写入失败，这一项没有生效，请重试。',
         'settings.unavailable': '配置服务还没就绪，稍等片刻再试。',
         'settings.on': '已开启',
@@ -288,7 +325,8 @@ window.__ModuleLoader__.load({
         'menu.plugins': 'Plugin manager',
         'menu.group': 'Global panels',
         'width.aria': 'Conversation width',
-        'width.hint': 'Pick a conversation width tier',
+        'width.hint': 'Pick a conversation width tier (or drag the handles on both sides)',
+        'width.menu': 'Conversation width tiers',
         'width.standard': 'standard',
         'width.medium': 'medium',
         'width.wide': 'wide',
@@ -297,7 +335,7 @@ window.__ModuleLoader__.load({
         'width.custom': 'custom',
         'settings.title': 'UI Fit',
         'settings.description':
-          'Three independent style modules. Turning one off restores the stock UI immediately, no restart.',
+          'Four independent style modules. Turning one off restores the stock UI immediately, no restart.',
         'settings.nav.title': 'Collapsible left navigation',
         'settings.nav.description':
           'Adds a three-state footer button: standard → compact → folded. Folded rows stay reachable inside More.',
@@ -307,8 +345,11 @@ window.__ModuleLoader__.load({
         'settings.mobile.title': 'Mobile density',
         'settings.mobile.description':
           'Only applies at viewport ≤ 899px: compresses tabs, action rows and status rows. Desktop is untouched.',
+        'settings.width.title': 'Conversation width tiers',
+        'settings.width.description':
+          'Adds a footer width entry: standard / medium / wide / ultra / full / custom. Dragging the conversation handles records a custom width too. The separate width plugin is no longer needed.',
         'settings.storage':
-          'All on by default. Switches live in this profile dsh-ui-fit config; the navigation state also lives in localStorage key dsh-ui-fit:nav.',
+          'All on by default. Switches live in this profile dsh-ui-fit config; the navigation state also lives in localStorage key dsh-ui-fit:nav, the width tier in dsh-ui-fit:width.',
         'settings.failed': 'Write failed; that change did not apply. Try again.',
         'settings.unavailable': 'The config service is not ready yet. Try again in a moment.',
         'settings.on': 'on',
@@ -320,8 +361,8 @@ window.__ModuleLoader__.load({
     /* 状态：三个开关 + 导航三态 + 窄行标记                                 */
     /* ================================================================== */
 
-    /** 三个模块开关；Host 配置还没到时先全开，与合并前一致。 */
-    const flags = { nav: true, composer: true, mobile: true }
+    /** 四个模块开关；Host 配置还没到时先全开，与合并前一致。 */
+    const flags = { nav: true, composer: true, mobile: true, width: true }
 
     /** 配置是否已经认领到（设置页据此显示可用状态）。 */
     let flagsReady = false
@@ -350,7 +391,7 @@ window.__ModuleLoader__.load({
           flagListeners.delete(listener)
         }
       }, [])
-      return { nav: flags.nav, composer: flags.composer, mobile: flags.mobile, ready: flagsReady, tick: value }
+      return { nav: flags.nav, composer: flags.composer, mobile: flags.mobile, width: flags.width, ready: flagsReady, tick: value }
     }
 
     /**
@@ -373,7 +414,7 @@ window.__ModuleLoader__.load({
     /** @type {Set<() => void>} */
     const modeListeners = new Set()
 
-    /** 把三个开关与三态写到 `<html>` 上，CSS 据此生效或失效。 */
+    /** 把四个开关与三态写到 `<html>` 上，CSS 据此生效或失效。 */
     function paint() {
       if (typeof document === 'undefined') return
       const root = document.documentElement
@@ -387,6 +428,9 @@ window.__ModuleLoader__.load({
         root.removeAttribute(ATTR_COMPOSER)
         root.removeAttribute(ATTR_TIGHT)
       }
+      /* 宽度段自己也是门控属性：关掉就整段失效，宽度退回宿主默认。 */
+      if (flags.width) root.setAttribute(ATTR_WIDTH, 'on')
+      else root.removeAttribute(ATTR_WIDTH)
     }
 
     /** 切换三态，持久化并通知所有挂载的控件。 */
@@ -422,11 +466,42 @@ window.__ModuleLoader__.load({
       return value
     }
 
-    /** 读宽度挡位插件写在 `<body>` 上的当前挡位。 */
+    /* ================================================================== */
+    /* 对话宽度：六档 + 自定义，直接驱动宿主的内容宽度轴                    */
+    /* ================================================================== */
+
+    /**
+     * 宿主的内容宽度轴（从 asar 里读出来的真实契约）：
+     *
+     * - `[data-conversation-content]`（`.body`）上声明
+     *   `--dsh-chat-content-width: var(--dsh-chat-user-width, clamp(680px, column*.64, 920px))`；
+     * - 它的**父元素**才是宽度变量的落点（`ConversationWidthControls` 里
+     *   `container.parentElement ?? container`）；
+     * - 宿主自己拖拽时写 localStorage 的 `dsh.conversation.contentWidth`，
+     *   再由 `ResizeObserver` 用 `resolveContentWidth(column, preference)` 重新算。
+     *
+     * 所以本插件只要写同一个 `--dsh-chat-user-width`、同一份 localStorage 偏好，
+     * 宿主的拖拽手柄、重排、resize 全部照旧工作——这是「接管」而不是「覆盖」。
+     */
+
+    /** 读持久化挡位。 */
     function readTier() {
-      if (typeof document === 'undefined' || document.body === null) return 'standard'
-      const value = document.body.getAttribute(TIER_ATTR)
-      return TIER_IDS.indexOf(value) === -1 ? 'standard' : value
+      try {
+        const raw = localStorage.getItem(WIDTH_KEY)
+        return TIER_IDS.indexOf(raw) === -1 ? 'standard' : raw
+      } catch {
+        return 'standard'
+      }
+    }
+
+    /** 读自定义档记下的像素值。 */
+    function readCustomWidth() {
+      try {
+        const value = Number(localStorage.getItem(WIDTH_CUSTOM_KEY))
+        return Number.isFinite(value) && value > 0 ? value : null
+      } catch {
+        return null
+      }
     }
 
     let tier = readTier()
@@ -435,14 +510,11 @@ window.__ModuleLoader__.load({
 
     /** 把最新挡位广播给挂载的控件。 */
     function publishTier() {
-      const next = readTier()
-      if (next === tier) return
-      tier = next
       for (const listener of Array.from(tierListeners)) {
         try {
           listener()
         } catch {
-          /* 同上。 */
+          /* 一个坏订阅者不能拖住其它人。 */
         }
       }
     }
@@ -458,6 +530,180 @@ window.__ModuleLoader__.load({
         }
       }, [])
       return value
+    }
+
+    /** 主对话区元素：宿主在它上面发布内容宽度。 */
+    function findWidthRoot() {
+      if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return null
+      for (const el of document.querySelectorAll(WIDTH_ROOT_SELECTOR)) {
+        if (el === null || el === undefined) continue
+        if (typeof el.closest === 'function' && el.closest(WIDTH_SIDEBAR_SELECTOR) !== null) continue
+        return el
+      }
+      return null
+    }
+
+    /** 宽度变量的落点：根元素的父级（与宿主同一约定）。 */
+    function widthTargetOf(root) {
+      if (root === null || root === undefined) return null
+      return root.parentElement === undefined || root.parentElement === null ? root : root.parentElement
+    }
+
+    /** 宿主默认宽度：`max(680, min(column × 0.64, 920))`。 */
+    function defaultWidthPx(column) {
+      return Math.max(680, Math.min(column * 0.64, 920))
+    }
+
+    /** 宿主允许的最宽：`max(640, column − 176)`。 */
+    function fullWidthPx(column) {
+      return Math.max(CONTENT_MIN, column - CONTENT_EDGE_BUDGET)
+    }
+
+    /** 挡位的目标宽度；`standard` 交还给宿主默认值。 */
+    function tierTargetPx(value, column, customPx) {
+      if (value === 'medium' || value === 'wide' || value === 'ultra') return NOMINAL_WIDTH_PX[value]
+      if (value === 'full') return fullWidthPx(column)
+      if (value === 'custom') return customPx
+      return null
+    }
+
+    /** 实际落地的宽度：与宿主 `resolveContentWidth` 同一套夹取。 */
+    function appliedTierPx(value, column, customPx) {
+      const target = tierTargetPx(value, column, customPx)
+      if (target === null) return null
+      return Math.min(Math.max(target, CONTENT_MIN), fullWidthPx(column))
+    }
+
+    /**
+     * 宿主的宽度偏好键现在是不是本插件写的。
+     *
+     * 这个键是宿主 `resolveContentWidth` 的输入，**用户自己拖拽手柄也会写它**。所以不能
+     * 无条件清：页面一加载就把它抹掉，等于把用户自己拖出来的宽度也删了。只在确实由本
+     * 插件写过（`appPrefOwned`）时才回收。
+     */
+    let appPrefOwned = false
+
+    /**
+     * 把挡位落到宽度轴上。
+     *
+     * 同时写两处：当前元素的行内变量（立刻生效，不等下一帧）和宿主的偏好键
+     * （resize 时宿主自己重算，不会跳回默认）。`standard` 只回收自己写过的部分。
+     */
+    function applyWidth(value) {
+      const root = findWidthRoot()
+      if (root === null) return false
+      const target = widthTargetOf(root)
+      if (target === null || target.style === undefined) return false
+      const column = typeof root.offsetWidth === 'number' ? root.offsetWidth : 0
+      const custom = readCustomWidth()
+      if (value === 'standard') {
+        target.style.removeProperty('--dsh-chat-user-width')
+        if (appPrefOwned) {
+          appPrefOwned = false
+          try {
+            localStorage.removeItem(APP_WIDTH_KEY)
+          } catch {
+            /* 隐私模式：本次页面生命周期内仍然生效。 */
+          }
+        }
+        return true
+      }
+      if (value === 'custom' && custom === null) return false
+      if (column <= 0) return false
+      const px = appliedTierPx(value, column, custom)
+      if (px === null) return false
+      target.style.setProperty('--dsh-chat-user-width', Math.round(px) + 'px')
+      const nominal = tierTargetPx(value, column, custom)
+      if (nominal !== null) {
+        try {
+          localStorage.setItem(APP_WIDTH_KEY, String(Math.round(nominal)))
+          appPrefOwned = true
+        } catch {
+          /* 同上。 */
+        }
+      }
+      return true
+    }
+
+    /** 切换挡位：写持久化、落宽度、广播。 */
+    function setTier(next) {
+      const value = TIER_IDS.indexOf(next) === -1 ? 'standard' : next
+      if (value === tier) return
+      tier = value
+      try {
+        localStorage.setItem(WIDTH_KEY, value)
+      } catch {
+        /* 隐私模式：本次页面生命周期内仍然生效。 */
+      }
+      applyWidth(value)
+      publishTier()
+    }
+
+    /** 交还行内变量：宿主回到自己的默认值或它自己的偏好值。 */
+    function clearWidth() {
+      const root = findWidthRoot()
+      if (root === null) return
+      const target = widthTargetOf(root)
+      if (target === null || target.style === undefined) return
+      target.style.removeProperty('--dsh-chat-user-width')
+    }
+
+    /**
+     * 交还宽度轴：清掉本插件写的行内变量，以及**它自己写过**的偏好键。
+     *
+     * 偏好键是宿主 `resolveContentWidth` 的输入，只清行内变量的话，宿主下一次 resize
+     * 会把宽度又算回我们设的值，用户会以为开关没生效。但用户自己拖拽也写同一个键，
+     * 所以只在 `appPrefOwned` 为真时才回收，绝不误删用户自己的宽度。
+     */
+    function releaseWidth() {
+      clearWidth()
+      if (!appPrefOwned) return
+      appPrefOwned = false
+      try {
+        localStorage.removeItem(APP_WIDTH_KEY)
+      } catch {
+        /* 隐私模式：清不掉也不会报错。 */
+      }
+    }
+
+    /** 记下自定义档的像素值（拖拽手柄松手时调）。 */
+    function rememberCustomWidth(px) {
+      if (!Number.isFinite(px) || px <= 0) return
+      try {
+        localStorage.setItem(WIDTH_CUSTOM_KEY, String(Math.round(px)))
+      } catch {
+        /* 同上。 */
+      }
+    }
+
+    /**
+     * 挡位读数，给菜单用。
+     *
+     * 名义值够得着就报名义值；窗口太窄够不着时报「名义 → 实际」，例如 `1280px → 696px`。
+     * 只报夹取后的值会让人以为六档没区别（窄窗口下全都是同一个数），只报名义值又是骗人。
+     */
+    function tierValueText(value) {
+      const root = findWidthRoot()
+      const column = root === null || typeof root.offsetWidth !== 'number' ? 0 : root.offsetWidth
+      const custom = readCustomWidth()
+      if (value === 'custom' && custom === null) return ''
+      if (column <= 0) {
+        /* 还没测出列宽：标准/满宽依赖列宽，只能给破折号。 */
+        if (value === 'standard' || value === 'full') return '—'
+        if (value === 'custom') return Math.round(custom) + 'px'
+        return NOMINAL_WIDTH_PX[value] + 'px'
+      }
+      if (value === 'standard') return Math.round(defaultWidthPx(column)) + 'px'
+      if (value === 'full') return Math.round(fullWidthPx(column)) + 'px'
+      if (value === 'custom') {
+        const px = appliedTierPx(value, column, custom)
+        return px === null ? '—' : Math.round(px) + 'px'
+      }
+      const nominal = NOMINAL_WIDTH_PX[value]
+      const applied = appliedTierPx(value, column, custom)
+      if (applied === null) return nominal + 'px'
+      const rounded = Math.round(applied)
+      return nominal === rounded ? rounded + 'px' : nominal + 'px → ' + rounded + 'px'
     }
 
     /* ================================================================== */
@@ -479,6 +725,19 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** 主对话区的实际内容宽度（读宿主发布的 CSS 变量）。 */
+    function currentContentPx() {
+      const root = findWidthRoot()
+      if (root === null || typeof getComputedStyle !== 'function') return null
+      try {
+        const raw = getComputedStyle(root).getPropertyValue('--dsh-chat-content-width').trim()
+        const px = parseFloat(raw)
+        return Number.isFinite(px) && px > 0 ? px : null
+      } catch {
+        return null
+      }
+    }
+
     /** 标记页脚那一排动作，让 CSS 把邻居拉齐到同一套图标节奏。 */
     function tagFoot() {
       if (typeof document === 'undefined') return
@@ -491,13 +750,6 @@ window.__ModuleLoader__.load({
         if (row.hasAttribute(ATTR_FOOT)) continue
         row.setAttribute(ATTR_FOOT, '')
       }
-    }
-
-    /** 宽度挡位插件在不在；不在就把页脚那颗入口藏掉，不留死按钮。 */
-    function syncWidthPresence() {
-      if (typeof document === 'undefined') return
-      const present = document.getElementById(WIDTH_TOGGLE_ID) !== null
-      document.documentElement.setAttribute(ATTR_WIDTH, present ? 'on' : 'off')
     }
 
     /* ================================================================== */
@@ -580,22 +832,107 @@ window.__ModuleLoader__.load({
     /* ================================================================== */
 
     /**
-     * 转发一次点击给宽度挡位插件自己的触发器。
+     * 挡位菜单的一行。
      *
-     * 它用 document 级 click 监听关菜单，而那个监听要等点击冒泡到底才跑。同步转发会让
-     * 菜单在同一次手势里「开了又被当成点了外面」立刻关掉，观感就是什么都没发生。延后
-     * 一个任务，让这次点击先走完；延后那次点击的 target 是它自己的 trigger，算内部。
+     * 用 `menuitemradio` 而不是 `menuitem`：这些选项是互斥的单选，读屏软件据此播报
+     * 「已选中 / 未选中」，而不是当成一组普通命令。
      */
-    function openWidthMenu() {
-      if (typeof document === 'undefined') return
-      const menu = document.getElementById(WIDTH_MENU_ID)
-      if (menu !== null && !menu.hasAttribute('hidden')) return
-      const toggle = document.getElementById(WIDTH_TOGGLE_ID)
-      if (toggle === null) return
-      const defer = typeof setTimeout === 'function' ? setTimeout : (run) => run()
-      defer(() => {
-        if (typeof toggle.click === 'function') toggle.click()
-      }, 0)
+    function widthItem(key, label, valueText, checked, onSelect) {
+      return h(
+        'button',
+        {
+          key,
+          type: 'button',
+          className: 'dsh-fit-width-item',
+          role: 'menuitemradio',
+          'aria-checked': checked ? 'true' : 'false',
+          'data-tier': key,
+          onClick: onSelect,
+        },
+        h('span', null, label),
+        h('span', { className: 'dsh-fit-width-value' }, valueText),
+      )
+    }
+
+    /**
+     * 页脚：对话宽度挡位入口。
+     *
+     * 菜单由本插件自己渲染——原先转发第三方插件的 `#dsh-wide-toggle`，现在宽度轴直接
+     * 由 `applyWidth` 驱动，不再需要那个插件。菜单定在侧栏页脚正上方，和页脚按钮同侧。
+     */
+    function WidthTrigger(props) {
+      const { t } = props
+      const value = useTier()
+      const [open, setOpen] = useState(false)
+      /* 自定义档的读数每次打开菜单时重读一次，拖拽改过之后不会显示旧值。 */
+      const [tick, setTick] = useState(0)
+      const hint = t('width.hint')
+      const Tooltip = primitives.Tooltip
+      const withTooltip = typeof Tooltip === 'function'
+
+      useEffect(() => {
+        if (!open) return undefined
+        const onPointerDown = (event) => {
+          const target = event === null || event === undefined ? null : event.target
+          if (target === null || typeof target.closest !== 'function') return
+          if (target.closest('.dsh-fit-width-menu') !== null) return
+          if (target.closest('[data-dsh-fit-width-trigger]') !== null) return
+          setOpen(false)
+        }
+        const onKeyDown = (event) => {
+          if (event !== null && event.key === 'Escape') setOpen(false)
+        }
+        document.addEventListener('pointerdown', onPointerDown, true)
+        document.addEventListener('keydown', onKeyDown)
+        return () => {
+          document.removeEventListener('pointerdown', onPointerDown, true)
+          document.removeEventListener('keydown', onKeyDown)
+        }
+      }, [open])
+
+      const choose = (next) => {
+        setTier(next)
+        setTick((n) => n + 1)
+        setOpen(false)
+      }
+
+      const rows = TIER_IDS.map((id) =>
+        widthItem(id, t('width.' + id), tierValueText(id), value === id, () => choose(id)),
+      )
+
+      const menu = h(
+        'div',
+        {
+          className: 'dsh-fit-width-menu',
+          role: 'menu',
+          'aria-label': t('width.menu'),
+          hidden: !open,
+          'data-dsh-fit-width-menu': '',
+        },
+        rows,
+      )
+
+      const button = h(
+        'button',
+        {
+          type: 'button',
+          className: 'dsh-fit-trigger dsh-fit-width',
+          'data-tier': value,
+          'data-dsh-fit-width-trigger': '',
+          'aria-label': t('width.aria') + ': ' + t('width.' + value),
+          'aria-haspopup': 'menu',
+          'aria-expanded': open ? 'true' : 'false',
+          title: withTooltip ? undefined : hint,
+          onClick: () => {
+            setTick((n) => n + 1)
+            setOpen((current) => !current)
+          },
+        },
+        h('span', { className: 'dsh-fit-glyph' }, tierGlyph(value)),
+      )
+
+      const trigger = withTooltip ? h(Tooltip, { label: hint, side: 'top', delayMs: 400 }, button) : button
+      return h(React.Fragment, null, trigger, menu)
     }
 
     /** 页脚：三态循环按钮。 */
@@ -617,28 +954,6 @@ window.__ModuleLoader__.load({
           onClick: () => setMode(next),
         },
         h('span', { className: 'dsh-fit-glyph' }, navGlyph(current)),
-      )
-      return withTooltip ? h(Tooltip, { label: hint, side: 'top', delayMs: 400 }, button) : button
-    }
-
-    /** 页脚：对话宽度挡位入口（宽度挡位插件只渲染进 shell.overlay，放不进这一排）。 */
-    function WidthTrigger(props) {
-      const { t } = props
-      const value = useTier()
-      const hint = t('width.hint')
-      const Tooltip = primitives.Tooltip
-      const withTooltip = typeof Tooltip === 'function'
-      const button = h(
-        'button',
-        {
-          type: 'button',
-          className: 'dsh-fit-trigger dsh-fit-width',
-          'data-tier': value,
-          'aria-label': t('width.aria') + ': ' + t('width.' + value),
-          title: withTooltip ? undefined : hint,
-          onClick: openWidthMenu,
-        },
-        h('span', { className: 'dsh-fit-glyph' }, tierGlyph(value)),
       )
       return withTooltip ? h(Tooltip, { label: hint, side: 'top', delayMs: 400 }, button) : button
     }
@@ -716,6 +1031,7 @@ window.__ModuleLoader__.load({
         { field: 'nav', title: t('settings.nav.title'), description: t('settings.nav.description') },
         { field: 'composer', title: t('settings.composer.title'), description: t('settings.composer.description') },
         { field: 'mobile', title: t('settings.mobile.title'), description: t('settings.mobile.description') },
+        { field: 'width', title: t('settings.width.title'), description: t('settings.width.description') },
       ]
       const toggle = (field, next) => {
         setFailed(null)
@@ -944,11 +1260,15 @@ window.__ModuleLoader__.load({
               flags.nav = value.nav !== false
               flags.composer = value.composer !== false
               flags.mobile = value.mobile !== false
+              flags.width = value.width !== false
               flagsReady = true
               paint()
               paintMobile()
               /* 输入条开关会改变 tight 的允许条件，立刻重测一次。 */
               settle()
+              /* 宽度段被关掉时把宽度轴交还宿主，重开时再落回去。 */
+              if (flags.width) applyWidth(tier)
+              else releaseWidth()
               notifyFlags()
             }
 
@@ -978,10 +1298,9 @@ window.__ModuleLoader__.load({
           })
         }
 
-        /* ---------- 标记：导航行 / 页脚 / 宽度挡位存在性 ---------- */
+        /* ---------- 标记：导航行 / 页脚 ---------- */
         tagNav()
         tagFoot()
-        syncWidthPresence()
         let tagFrame = 0
         const observer = new MutationObserver(() => {
           if (tagFrame !== 0) return
@@ -989,7 +1308,6 @@ window.__ModuleLoader__.load({
             tagFrame = 0
             if (document.querySelector('nav[' + ATTR_NAVLIST + ']') === null) tagNav()
             if (document.querySelector('[' + ATTR_FOOT + ']') === null) tagFoot()
-            syncWidthPresence()
             if (findRow() !== seen) schedule()
           })
         })
@@ -999,11 +1317,94 @@ window.__ModuleLoader__.load({
           if (tagFrame !== 0) cancelAnimationFrame(tagFrame)
         })
 
-        if (typeof document !== 'undefined' && document.body !== null) {
-          const tierObserver = new MutationObserver(() => publishTier())
-          tierObserver.observe(document.body, { attributes: true, attributeFilter: [TIER_ATTR] })
-          push(() => tierObserver.disconnect())
+        /*
+         * ---------- 拖拽读数 ----------
+         *
+         * 宿主自己的拖拽手柄（`[data-width-handle]`）松手时才写 localStorage 并重排。
+         * 拖的过程中没有任何读数，用户不知道自己拖到了多宽。这里在拖动期间跟一个浮标
+         * 显示当前内容宽度；松手后如果落点不等于当前挡位的目标值，就切到「自定义」并
+         * 记住这个宽度——这样拖完再点菜单，高亮的是用户自己拖出来的那一档。
+         */
+        const guide = typeof document.createElement === 'function' ? document.createElement('div') : null
+        if (guide !== null) {
+          guide.className = 'dsh-fit-width-guide'
+          guide.setAttribute('data-dsh-fit-width-guide', '')
+          guide.hidden = true
+          if (document.body !== null) document.body.appendChild(guide)
         }
+
+        let dragging = false
+        let guideTimer = 0
+        const hideGuide = () => {
+          if (guide !== null) guide.hidden = true
+        }
+        const isHandle = (event) => {
+          const target = event === null || event === undefined ? null : event.target
+          if (target === null || typeof target.closest !== 'function') return false
+          return target.closest('[data-width-handle]') !== null
+        }
+        const onPointerDown = (event) => {
+          if (!isHandle(event)) return
+          dragging = true
+          if (guideTimer !== 0) {
+            clearTimeout(guideTimer)
+            guideTimer = 0
+          }
+        }
+        const onPointerMove = (event) => {
+          if (!dragging || guide === null) return
+          const px = currentContentPx()
+          if (px === null) return
+          guide.textContent = Math.round(px) + 'px'
+          guide.hidden = false
+          guide.style.left = (typeof event.clientX === 'number' ? event.clientX + 16 : 16) + 'px'
+          guide.style.top = (typeof event.clientY === 'number' ? event.clientY : 0) + 'px'
+        }
+        const onPointerUp = (event) => {
+          if (!dragging) return
+          dragging = false
+          if (guideTimer !== 0) clearTimeout(guideTimer)
+          guideTimer = setTimeout(hideGuide, 800)
+          const px = currentContentPx()
+          if (px === null) return
+          const column = (() => {
+            const root = findWidthRoot()
+            return root === null || typeof root.offsetWidth !== 'number' ? 0 : root.offsetWidth
+          })()
+          if (column <= 0) return
+          const target = appliedTierPx(tier, column, readCustomWidth())
+          /* 落点和当前挡位的目标值一致就不改挡位；差 2px 以内视为没动过。 */
+          if (target !== null && Math.abs(px - target) <= 2) return
+          if (event !== null && event !== undefined && event.type === 'pointerup') {
+            rememberCustomWidth(px)
+            tier = 'custom'
+            try {
+              localStorage.setItem(WIDTH_KEY, 'custom')
+            } catch {
+              /* 隐私模式：本次页面生命周期内仍然生效。 */
+            }
+            publishTier()
+          }
+        }
+
+        if (typeof document.addEventListener === 'function') {
+          document.addEventListener('pointerdown', onPointerDown, true)
+          document.addEventListener('pointermove', onPointerMove, true)
+          document.addEventListener('pointerup', onPointerUp, true)
+          push(() => {
+            document.removeEventListener('pointerdown', onPointerDown, true)
+            document.removeEventListener('pointermove', onPointerMove, true)
+            document.removeEventListener('pointerup', onPointerUp, true)
+            if (guideTimer !== 0) clearTimeout(guideTimer)
+            if (guide !== null && guide.parentNode !== null) guide.parentNode.removeChild(guide)
+          })
+        }
+
+        /*
+         * 启动时把持久化的挡位重新落到宽度轴上：宿主的 `ResizeObserver` 只认它自己的
+         * 偏好键，用户选了「中 / 宽 / 超宽」这类名义值之后重启，得由本插件补一次。
+         */
+        if (flags.width) applyWidth(tier)
 
         /* ---------- 槽位 ---------- */
         push(

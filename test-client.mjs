@@ -68,25 +68,83 @@ const flushTimers = () => {
   for (const run of timers.splice(0)) run()
 }
 
-function fakeElement() {
+/** 假元素：够 drag-guide 用（属性表 + 行内样式 + 父子关系）。 */
+function fakeElement(tag) {
+  const attrs = new Map()
+  const styleProps = new Map()
   return {
+    tagName: tag || 'div',
     dataset: {},
     textContent: '',
+    className: '',
+    hidden: false,
     removed: false,
+    parentNode: null,
+    style: {
+      setProperty: (name, value) => styleProps.set(name, value),
+      removeProperty: (name) => styleProps.delete(name),
+      getPropertyValue: (name) => (styleProps.has(name) ? styleProps.get(name) : ''),
+    },
+    getAttribute: (name) => (attrs.has(name) ? attrs.get(name) : null),
+    setAttribute: (name, value) => attrs.set(name, String(value)),
+    removeAttribute: (name) => attrs.delete(name),
+    hasAttribute: (name) => attrs.has(name),
     remove() {
       this.removed = true
       const at = styles.indexOf(this)
       if (at >= 0) styles.splice(at, 1)
+      if (this.parentNode !== null) this.parentNode.removeChild(this)
     },
   }
 }
+
+/** 主对话区根元素：宿主在它上面发布 `--dsh-chat-content-width`。 */
+const fakeWidthRoot = {
+  offsetWidth: 1200,
+  parentElement: null,
+  closest: () => null,
+}
+const fakeWidthTarget = {
+  style: {
+    props: new Map(),
+    setProperty(name, value) {
+      this.props.set(name, value)
+    },
+    removeProperty(name) {
+      this.props.delete(name)
+    },
+    getPropertyValue(name) {
+      return this.props.has(name) ? this.props.get(name) : ''
+    },
+  },
+}
+fakeWidthRoot.parentElement = fakeWidthTarget
+
+/** 内容宽度读数：跟真实宿主一样，行内变量优先，否则按 column × 0.64 夹取。 */
+function contentWidthPx() {
+  const raw = fakeWidthTarget.style.getPropertyValue('--dsh-chat-user-width')
+  const px = parseFloat(raw)
+  if (Number.isFinite(px) && px > 0) return px
+  return Math.max(680, Math.min(1200 * 0.64, 920))
+}
+
+const docListeners = new Map()
+const bodyChildren = []
 
 const document = {
   head: { appendChild: (el) => styles.push(el) },
   body: {
     getAttribute: (name) => (bodyAttrs.has(name) ? bodyAttrs.get(name) : null),
     setAttribute: (name, value) => bodyAttrs.set(name, value),
-    appendChild: () => {},
+    appendChild: (el) => {
+      bodyChildren.push(el)
+      el.parentNode = document.body
+    },
+    removeChild: (el) => {
+      const at = bodyChildren.indexOf(el)
+      if (at >= 0) bodyChildren.splice(at, 1)
+      el.parentNode = null
+    },
   },
   documentElement: {
     setAttribute: (name, value) => htmlAttrs.set(name, value),
@@ -97,11 +155,22 @@ const document = {
     if (id === 'dsh-width-menu') return fakeMenu
     return null
   },
-  createElement: () => fakeElement(),
+  createElement: (tag) => fakeElement(tag),
+  addEventListener: (type, fn) => {
+    if (!docListeners.has(type)) docListeners.set(type, [])
+    docListeners.get(type).push(fn)
+  },
+  removeEventListener: (type, fn) => {
+    const list = docListeners.get(type)
+    if (list === undefined) return
+    const at = list.indexOf(fn)
+    if (at >= 0) list.splice(at, 1)
+  },
   querySelectorAll: (selector) => {
     if (selector === 'nav') return [fakeNav]
     if (selector === '[data-dsh-fit-foot]') return footAttrs.has('data-dsh-fit-foot') ? [fakeFoot] : []
     if (selector === '[data-dsh-fit-navlist]') return navAttrs.has('data-dsh-fit-navlist') ? [fakeNav] : []
+    if (selector === '[data-conversation-content]') return [fakeWidthRoot]
     return []
   },
   querySelector: (selector) => {
@@ -126,6 +195,9 @@ const sandbox = {
     },
     setItem(key, value) {
       this.store.set(key, String(value))
+    },
+    removeItem(key) {
+      this.store.delete(key)
     },
   },
   requestAnimationFrame: (fn) => {
@@ -227,8 +299,12 @@ assert.match(css, /data-dsh-fit-navmode="fold"/, '导航收纳规则存在')
 assert.match(css, /data-dsh-fit-composer="on"/, '输入条规则存在')
 assert.match(css, /data-dsh-fit-tight="on"/, '输入条窄行规则存在')
 assert.match(css, /data-dsh-fit-mobile="on"/, '手机密度规则存在')
-assert.match(css, /html:not\(\[data-dsh-fit-nav="on"\]\) \.dsh-fit-trigger\{display:none\}/, '关掉导航时按钮一起消失')
-assert.match(css, /#dsh-width-menu\{right:auto;left:12px;bottom:132px;z-index:2147483000/, '宽度菜单提到侧栏之上')
+assert.match(
+  css,
+  /html:not\(\[data-dsh-fit-nav="on"\]\) \.dsh-fit-trigger\[data-mode\]\{display:none\}/,
+  '关掉导航只藏三态按钮，宽度按钮不受牵连',
+)
+assert.match(css, /#dsh-width-menu\{display:none\}/, '第三方宽度菜单被藏掉，只留本插件入口')
 assert.match(css, /--dsh-fit-context-shift:1px/, '上下文百分比下移量可调')
 assert.match(
   css,
@@ -267,7 +343,7 @@ assert.equal(htmlAttrs.get('data-dsh-fit-nav'), 'on', '导航默认开')
 assert.equal(htmlAttrs.get('data-dsh-fit-composer'), 'on', '输入条默认开')
 assert.equal(htmlAttrs.get('data-dsh-fit-mobile'), 'on', '手机密度默认开（matchMedia 命中）')
 assert.equal(htmlAttrs.get('data-dsh-fit-tight'), 'on', '行宽 400 < 560，窄行标记生效')
-assert.equal(htmlAttrs.get('data-dsh-fit-width'), 'on', '检测到宽度挡位插件')
+assert.equal(htmlAttrs.get('data-dsh-fit-width'), 'on', '宽度段默认开')
 assert.equal(htmlAttrs.get('data-dsh-fit-navmode'), undefined, '标准态不打三态属性')
 assert.ok(navAttrs.has('data-dsh-fit-navlist'), '面板 nav 已标记')
 assert.ok(footAttrs.has('data-dsh-fit-foot'), '页脚那一排已标记')
@@ -312,23 +388,54 @@ assert.equal(standardGlyph.props.width, 14, '与页脚其它按钮同一节奏')
 assert.equal(standardGlyph.children.length, 3, '标准态三行')
 
 const widthTree = widthComponent({ wide: true, t })
-assert.equal(widthTree.props.className, 'dsh-fit-trigger dsh-fit-width')
-assert.equal(widthTree.props['data-tier'], 'standard', '默认标准挡位')
-const tierSvg = widthTree.children[0].children[0]
+/* 触发器 + 菜单是兄弟节点，用 Fragment 包着。 */
+assert.equal(widthTree.type, 'Fragment', '触发器和菜单同属一个 Fragment')
+const widthButton = widthTree.children[0]
+const widthMenu = widthTree.children[1]
+assert.equal(widthButton.props.className, 'dsh-fit-trigger dsh-fit-width')
+assert.equal(widthButton.props['data-tier'], 'standard', '默认标准挡位')
+assert.equal(widthButton.props['aria-haspopup'], 'menu', '按钮声明弹出菜单')
+const tierSvg = widthButton.children[0].children[0]
 assert.equal(tierSvg.children.length, 6, '六个挡位六根条')
 assert.equal(tierSvg.children[0].props.opacity, 1, '当前挡位之前点亮')
 assert.equal(tierSvg.children[5].props.opacity, 0.3, '之后变暗')
 
-const before = fakeToggle.clicks
-widthTree.props.onClick()
-assert.equal(fakeToggle.clicks, before, '延后一拍：当前点击先走完')
-flushTimers()
-assert.equal(fakeToggle.clicks, before + 1, '下一拍才转发')
-fakeMenu.open = true
-widthTree.props.onClick()
-flushTimers()
-assert.equal(fakeToggle.clicks, before + 1, '菜单已开时交给它自己的 click-away')
-fakeMenu.open = false
+/* 菜单：六行，每行是 menuitemradio，带实际像素读数。 */
+assert.equal(widthMenu.props.className, 'dsh-fit-width-menu')
+assert.equal(widthMenu.props.role, 'menu')
+assert.equal(widthMenu.props.hidden, true, '默认收起')
+assert.equal(widthMenu.children.length, 6, '六个挡位')
+assert.equal(widthMenu.children[0].props.role, 'menuitemradio')
+assert.equal(widthMenu.children[0].props['aria-checked'], 'true', '标准档选中')
+assert.equal(widthMenu.children[1].props['aria-checked'], 'false')
+/* 1200 列宽：标准 = clamp(680, 1200*0.64=768, 920) = 768。 */
+assert.equal(widthMenu.children[0].children[1].children[0], '768px', '标准档报实际宽度')
+/* 中档名义 1120 超过上限（1200-176=1024）→ 报「名义 → 实际」，别让六档看起来全一样。 */
+assert.equal(widthMenu.children[1].children[1].children[0], '1120px → 1024px', '够不着时报夹取后的值')
+assert.equal(widthMenu.children[5].children[1].children[0], '', '自定义未设置时不显示读数')
+
+/* 点按钮开菜单（不再转发第三方插件）。 */
+const toggleClicks = fakeToggle.clicks
+widthButton.props.onClick()
+assert.equal(fakeToggle.clicks, toggleClicks, '不再转发给第三方插件')
+assert.equal(widthComponent({ wide: true, t }).children[1].props.hidden, true, '受控组件：测试替身不重渲染')
+
+/* 选「中」：写持久化、写宽度变量、写宿主偏好键。 */
+widthMenu.children[1].props.onClick()
+assert.equal(sandbox.localStorage.getItem('dsh-ui-fit:width'), 'medium', '挡位持久化')
+assert.equal(fakeWidthTarget.style.getPropertyValue('--dsh-chat-user-width'), '1024px', '宽度落到宿主变量')
+assert.equal(sandbox.localStorage.getItem('dsh.conversation.contentWidth'), '1120', '写宿主偏好键（名义值）')
+
+/* 选「满宽」：column − 176 = 1024。 */
+widthComponent({ wide: true, t }).children[1].children[4].props.onClick()
+assert.equal(sandbox.localStorage.getItem('dsh-ui-fit:width'), 'full')
+assert.equal(fakeWidthTarget.style.getPropertyValue('--dsh-chat-user-width'), '1024px', '满宽等于列宽减边距')
+
+/* 回标准：行内变量与偏好键都清掉，交还宿主。 */
+widthComponent({ wide: true, t }).children[1].children[0].props.onClick()
+assert.equal(sandbox.localStorage.getItem('dsh-ui-fit:width'), 'standard')
+assert.equal(fakeWidthTarget.style.getPropertyValue('--dsh-chat-user-width'), '', '标准档清掉行内变量')
+assert.equal(sandbox.localStorage.getItem('dsh.conversation.contentWidth'), null, '标准档也清掉宿主偏好键')
 
 /* ---------------- 三态循环 ---------------- */
 
@@ -477,11 +584,16 @@ const settingsTree = settingsSection({ t, close: () => {} })
 assert.equal(settingsTree.type, 'div')
 assert.equal(settingsTree.props.className, 'dsh-fit-settings')
 assert.equal(settingsTree.props['data-dsh-fit-settings'], '', '带自己的根标记')
-assert.equal(settingsTree.children.length, 6, '标题 + 说明 + 三行开关 + 存储说明')
+assert.equal(settingsTree.children.length, 7, '标题 + 说明 + 四行开关 + 存储说明')
 assert.equal(settingsTree.children[0].type, 'h2')
 assert.equal(settingsTree.children[0].children[0], 'L:settings.title', '标题走 locale')
 assert.equal(settingsTree.children[1].props.className, 'dsh-fit-settings-desc')
-assert.equal(settingsTree.children[5].props.className, 'dsh-fit-settings-note', '存储说明在最后')
+assert.equal(settingsTree.children[6].props.className, 'dsh-fit-settings-note', '存储说明在最后')
+/* 第四行是宽度开关，顺序必须与 Config 字段一致，否则开关会串位。 */
+const widthRowElement = settingsTree.children[5]
+assert.equal(widthRowElement.props.field, 'width', '第四行是宽度开关')
+assert.equal(widthRowElement.props.title, 'L:settings.width.title')
+assert.equal(widthRowElement.props.description, 'L:settings.width.description')
 
 const navRowElement = settingsTree.children[2]
 assert.equal(typeof navRowElement.type, 'function', '行是组件')

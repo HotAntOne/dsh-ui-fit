@@ -1,5 +1,50 @@
 # 更新记录
 
+## 1.2.0
+
+**新增：对话宽度挡位由本插件自己实现，不再需要第三方插件**
+
+原先页脚那颗宽度按钮只是**转发**给第三方插件 `dsh-width-tiers`（作者 aaronlei）的触发器，
+宽度逻辑、菜单、拖拽读数全在别人那里。现在这四样都由本插件实现，装了本插件就可以卸掉它。
+
+- 页脚新增「对话宽度」入口（`sidebar.footer.action`，id `dsh-ui-fit-width`、order 51），
+  点开是自己的六档菜单：标准 / 中 / 宽 / 超宽 / 满宽 / 自定义。
+- **接管宿主的宽度轴**，不是覆盖：写 `[data-conversation-content]` 父元素的
+  `--dsh-chat-user-width`（立即生效），同时写 `localStorage` 的
+  `dsh.conversation.contentWidth`（宿主 resize 时用 `resolveContentWidth` 重算，不会跳回默认）。
+  宿主自己的拖拽手柄照常可用。
+- 夹取规则与宿主完全一致：`max(640, 列宽 − 176)` 上限、`640` 下限；标准档是
+  `clamp(680, 列宽 × 0.64, 920)`。
+- 菜单里的读数是**实际落地值**；名义值够不着时写成 `1280px → 696px`，不假装能到。
+- **拖拽读数**：拖动 `[data-width-handle]` 期间跟一个浮标显示当前内容宽度，松手 800ms 后消失；
+  落点与当前挡位差超过 2px 时自动切到「自定义」并记住这个宽度。
+- **不误删用户偏好**：宿主那个偏好键用户拖拽时也会写，所以只在确实由本插件写过
+  （`appPrefOwned` 标记）时才回收。
+- 设置页新增第四个开关「对话宽度挡位」；关掉时入口、菜单、读数一起消失，宽度轴交还宿主。
+- 与 `dsh-width-tiers` 共存时，它的浮动按钮被压成不可见不可点，避免两个按钮打同一个宽度轴。
+- 导航开关不再牵连宽度按钮：关掉导航只藏三态按钮（选择器从 `.dsh-fit-trigger` 收窄到
+  `.dsh-fit-trigger[data-mode]`）。
+
+**测试**
+
+- 新增宽度断言：六档菜单结构（`role=menuitemradio` / `aria-checked`）、读数文案（含
+  `名义 → 实际` 形式）、选档后行内变量与偏好键的写入、标准档回收自己写过的键。
+- 测试沙箱补齐 `createElement` 的完整假元素、`[data-conversation-content]` 假根节点、
+  `localStorage.removeItem`、`document.addEventListener`。
+- 设置页断言从三行改为四行，并校验第四行就是 `width` 字段（顺序与 Config 一致，避免串位）。
+
+## 1.1.3
+
+**清理：旧插件的痕迹全部移除**
+
+- 三个被合并的旧插件已从本机彻底卸载（profile 的 `dependencies`、`node_modules`、工作区源码、
+  源码备份全部删除），`dsh-ui-fit` 成为唯一实现。
+- 删掉 `client.js` 里的一次性迁移逻辑：早期版本会读旧插件的 localStorage 键把导航三态搬过来，
+  现在迁移窗口已关闭，这段代码和那个键名一并移除。
+- `lint-identifiers.mjs` 去掉「允许旧键名出现一次」的例外，旧插件的包名与属性名一个都不许留。
+- `test-client.mjs` 删掉重复的旧属性名守卫（`lint-identifiers.mjs` 已覆盖同一件事）。
+- README / CHANGELOG 里对旧插件包名的引用改成描述性表述。
+
 ## 1.1.2
 
 **修复：重启 DSH 后插件整个消失**
@@ -40,18 +85,6 @@
 - 补上设置页断言：注册项、渲染结构（标题 / 说明 / 三行 / 存储说明）、`role=switch` /
   `aria-checked` / `data-on` / `aria-label` 随状态翻转、点击写入本插件命名空间。
 - 补一条守卫断言：设置页样式不允许出现在任何开关的门控选择器下。
-
-## 1.1.3
-
-**清理：旧插件的痕迹全部移除**
-
-- 三个被合并的旧插件已从本机彻底卸载（profile 的 `dependencies`、`node_modules`、工作区源码、
-  源码备份全部删除），`dsh-ui-fit` 成为唯一实现。
-- 删掉 `client.js` 里的一次性迁移逻辑：早期版本会读旧插件的 localStorage 键把导航三态搬过来，
-  现在迁移窗口已关闭，这段代码和那个键名一并移除。
-- `lint-identifiers.mjs` 去掉「允许旧键名出现一次」的例外，旧插件的包名与属性名一个都不许留。
-- `test-client.mjs` 删掉重复的旧属性名守卫（`lint-identifiers.mjs` 已覆盖同一件事）。
-- README / CHANGELOG 里对旧插件包名的引用改成描述性表述。
 
 ## 1.0.0
 
