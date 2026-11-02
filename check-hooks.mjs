@@ -28,11 +28,14 @@ const HOOKS = [
   { needle: '_panelList', label: '导航：全局面板 nav 的类名局部名' },
   { needle: 'aria-haspopup', label: '导航：宿主「更多」行（区分面板 nav 用）' },
   { needle: 'dsh-mobile-control__trigger', label: '导航：页脚 dsh-mobile 触发器（对齐图标节奏用）' },
-  { needle: 'dsh-wide-toggle', label: '导航：宽度挡位插件的浮动按钮' },
-  { needle: 'dsh-width-menu', label: '导航：宽度挡位插件的菜单' },
-  { needle: 'data-dsh-width', label: '导航：宽度挡位写在 body 上的当前挡位' },
+  /* ---- 二、对话宽度（1.2.0 起自实现，不再依赖第三方插件） ---- */
+  { needle: 'data-conversation-content', label: '宽度：主对话区根元素（宽度变量发布点）' },
+  { needle: 'data-sidebar-chat', label: '宽度：侧栏会话副本（要排除的那份）' },
+  { needle: 'dsh-chat-content-width', label: '宽度：内容宽度 CSS 变量' },
+  { needle: 'dsh.conversation.contentWidth', label: '宽度：宿主的内容宽度偏好键' },
+  { needle: 'data-width-handle', label: '宽度：拖拽手柄（读数 guide 挂在它上面）' },
 
-  /* ---- 二、输入条 ---- */
+  /* ---- 三、输入条 ---- */
   { needle: 'data-better-input-state', label: '输入条：语音按钮（隐藏目标）' },
   { needle: 'pua-trigger', label: '输入条：PUA 控件' },
   { needle: 'pua-entry-icon', label: '输入条：PUA 图标' },
@@ -45,7 +48,7 @@ const HOOKS = [
   { needle: 'data-dsh-mobile-composer-row', label: '输入条：dsh-mobile 的 44px 触控下限（要反制）' },
   { needle: 'data-dsh-mobile-composer-trailing', label: '输入条：dsh-mobile 右侧容器' },
 
-  /* ---- 三、手机端密度 ---- */
+  /* ---- 四、手机端密度 ---- */
   { needle: 'data-composer-dock', label: '手机：底部状态条容器' },
   { needle: 'data-composer-stat', label: '手机：统计胶囊（计时/用量）' },
   { needle: 'data-conversation-tabs', label: '手机：视图标签行' },

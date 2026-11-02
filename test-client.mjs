@@ -64,14 +64,39 @@ const fakeMenu = {
 
 const bodyAttrs = new Map()
 const timers = []
+const timerIds = new Map()
+let timerSeq = 0
 const flushTimers = () => {
   for (const run of timers.splice(0)) run()
+  timerIds.clear()
 }
 
 /** 假元素：够 drag-guide 用（属性表 + 行内样式 + 父子关系）。 */
 function fakeElement(tag) {
   const attrs = new Map()
   const styleProps = new Map()
+  /* `el.style.left = '10px'` 和 `el.style.setProperty('left', …)` 都要能读到，用 Proxy 统一。 */
+  const style = new Proxy(
+    {
+      setProperty: (name, value) => styleProps.set(name, String(value)),
+      removeProperty: (name) => styleProps.delete(name),
+      getPropertyValue: (name) => (styleProps.has(name) ? styleProps.get(name) : ''),
+    },
+    {
+      set(target, prop, value) {
+        if (prop in target) {
+          target[prop] = value
+          return true
+        }
+        styleProps.set(prop, String(value))
+        return true
+      },
+      get(target, prop) {
+        if (prop in target) return target[prop]
+        return styleProps.has(prop) ? styleProps.get(prop) : ''
+      },
+    },
+  )
   return {
     tagName: tag || 'div',
     dataset: {},
@@ -80,11 +105,7 @@ function fakeElement(tag) {
     hidden: false,
     removed: false,
     parentNode: null,
-    style: {
-      setProperty: (name, value) => styleProps.set(name, value),
-      removeProperty: (name) => styleProps.delete(name),
-      getPropertyValue: (name) => (styleProps.has(name) ? styleProps.get(name) : ''),
-    },
+    style,
     getAttribute: (name) => (attrs.has(name) ? attrs.get(name) : null),
     setAttribute: (name, value) => attrs.set(name, String(value)),
     removeAttribute: (name) => attrs.delete(name),
@@ -119,6 +140,15 @@ const fakeWidthTarget = {
   },
 }
 fakeWidthRoot.parentElement = fakeWidthTarget
+
+/**
+ * 宿主发布在根元素上的计算样式。真实浏览器里自定义属性的计算值是 token 串
+ * （`clamp(680px, calc(...), 920px)`），所以默认空表就代表「解析不出数字」。
+ */
+const rootStyle = new Map()
+const getComputedStyle = (el) => ({
+  getPropertyValue: (name) => (el === fakeWidthRoot && rootStyle.has(name) ? rootStyle.get(name) : ''),
+})
 
 /** 内容宽度读数：跟真实宿主一样，行内变量优先，否则按 column × 0.64 夹取。 */
 function contentWidthPx() {
@@ -205,7 +235,20 @@ const sandbox = {
     return 1
   },
   cancelAnimationFrame: () => {},
-  setTimeout: (fn) => timers.push(fn),
+  getComputedStyle,
+  setTimeout: (fn) => {
+    timerSeq += 1
+    timerIds.set(timerSeq, fn)
+    timers.push(fn)
+    return timerSeq
+  },
+  clearTimeout: (id) => {
+    const fn = timerIds.get(id)
+    if (fn === undefined) return
+    timerIds.delete(id)
+    const at = timers.indexOf(fn)
+    if (at >= 0) timers.splice(at, 1)
+  },
   matchMedia: (query) => ({
     query,
     matches: true,
@@ -436,6 +479,56 @@ widthComponent({ wide: true, t }).children[1].children[0].props.onClick()
 assert.equal(sandbox.localStorage.getItem('dsh-ui-fit:width'), 'standard')
 assert.equal(fakeWidthTarget.style.getPropertyValue('--dsh-chat-user-width'), '', '标准档清掉行内变量')
 assert.equal(sandbox.localStorage.getItem('dsh.conversation.contentWidth'), null, '标准档也清掉宿主偏好键')
+
+/* ---------------- 拖拽读数（guide） ---------------- */
+
+/*
+ * 宿主自己的手柄在 phase=active 时才挂载，测试里用一个带 closest 的假手柄，
+ * 直接派发到 document 级监听上——这正是插件实际依赖的那条路径。
+ */
+const fakeHandle = { closest: (sel) => (sel === '[data-width-handle]' ? fakeHandle : null) }
+const dispatchDoc = (type, x, y) => {
+  const list = docListeners.get(type) || []
+  for (const fn of list) fn({ type, target: fakeHandle, clientX: x, clientY: y })
+}
+
+const guides = bodyChildren.filter((el) => el.className === 'dsh-fit-width-guide')
+assert.ok(guides.length >= 1, 'guide 挂在 body 上')
+/* 前面几段 harness 各自 apply 过一次，取最后挂上去的那个（当前活跃实例）。 */
+const guideEl = guides[guides.length - 1]
+assert.equal(guideEl.hidden, true, '默认不显示')
+assert.equal(guideEl.getAttribute('data-dsh-fit-width-guide'), '', '带标记属性')
+
+/* 标准挡位：1200 列宽 → 默认宽度 min(max(680, 768), 1024) = 768 */
+dispatchDoc('pointerdown', 600, 300)
+dispatchDoc('pointermove', 540, 320)
+assert.equal(guideEl.hidden, false, '拖动时显示读数')
+assert.equal(guideEl.textContent, '768px', '读数取宿主默认公式（CSS 变量是 clamp 串，解析不出数字）')
+assert.equal(guideEl.style.getPropertyValue('left'), '556px', '跟手：clientX + 16')
+assert.equal(guideEl.style.getPropertyValue('top'), '320px')
+
+/* 落点与标准挡位一致 → 不记自定义 */
+dispatchDoc('pointerup', 540, 320)
+assert.equal(sandbox.localStorage.getItem('dsh-ui-fit:width'), 'standard', '没动过就不改挡位')
+assert.equal(sandbox.localStorage.getItem('dsh-ui-fit:widthCustom'), null, '没动过就不记自定义')
+assert.equal(guideEl.hidden, false, '松手后先留着，800ms 后再收')
+flushTimers()
+assert.equal(guideEl.hidden, true, '800ms 后收起读数')
+
+/* 落点变了 → 记成自定义挡位 */
+rootStyle.set('--dsh-chat-content-width', '700px')
+dispatchDoc('pointerdown', 600, 300)
+dispatchDoc('pointermove', 500, 300)
+assert.equal(guideEl.textContent, '700px', '读数优先用宿主发布的实际宽度')
+dispatchDoc('pointerup', 500, 300)
+assert.equal(sandbox.localStorage.getItem('dsh-ui-fit:width'), 'custom', '拖动改变宽度后切到自定义')
+assert.equal(sandbox.localStorage.getItem('dsh-ui-fit:widthCustom'), '700', '记住落点宽度')
+flushTimers()
+rootStyle.clear()
+
+/* 清掉拖拽状态，别影响后面的断言 */
+sandbox.localStorage.setItem('dsh-ui-fit:width', 'standard')
+sandbox.localStorage.removeItem('dsh-ui-fit:widthCustom')
 
 /* ---------------- 三态循环 ---------------- */
 

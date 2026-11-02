@@ -1,5 +1,25 @@
 # 更新记录
 
+## 1.2.1
+
+**修复：拖拽读数在标准挡位下是空的，且原地松手会被误记成「自定义」**
+
+1.2.0 的读数直接 `parseFloat` 宿主发布的 `--dsh-chat-content-width`。但自定义属性的计算值是
+`var()` 替换后的 token 串，`clamp(680px, calc(...), 920px)` 不会被求值，`parseFloat` 得到 `NaN`
+——于是标准挡位下拖动手柄，浮标一直是空的。现在解析不出数字时按宿主的默认公式
+`max(680, min(列宽 × 0.64, 920))` 回算，第一下拖动就有读数。
+
+同一处还有第二个问题：松手时的「落点是否变化」判断拿 `appliedTierPx(当前挡位)` 当基准，
+而标准挡位没有目标值（返回 `null`），判断被跳过——结果只要碰一下手柄就会被记成自定义。
+现在标准挡位改用宿主默认宽度作基准，差 2px 以内视为没动过。
+
+两处都在真实 GUI 里验证过：标准挡位原地点击 → 仍是 `standard`、不写自定义键；
+拖到 700px → 读数显示 `700px`、松手记 `custom: 700`。
+
+另外把 `check-hooks.mjs` 里三条指向已卸载的 `dsh-width-tiers` 的钩子，换成本插件真正依赖的
+宿主钩子：`data-conversation-content`、`data-sidebar-chat`、`dsh-chat-content-width`、
+`dsh.conversation.contentWidth`、`data-width-handle`。
+
 ## 1.2.0
 
 **新增：对话宽度挡位由本插件自己实现，不再需要第三方插件**

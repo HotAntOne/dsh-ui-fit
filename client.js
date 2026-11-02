@@ -725,17 +725,29 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** 主对话区的实际内容宽度（读宿主发布的 CSS 变量）。 */
+    /**
+     * 主对话区的实际内容宽度。
+     *
+     * 优先读宿主发布的 CSS 变量。注意自定义属性的计算值是「var() 替换后的 token 串」，
+     * 不会把 `clamp()` 求值——标准挡位下这里拿到的是 `clamp(680px, calc(...), 920px)`，
+     * 直接 `parseFloat` 是 NaN。所以解析不出来时按宿主的默认公式回算，保证拖拽读数
+     * 在第一下拖动时就有数字，而不是空着。
+     */
     function currentContentPx() {
       const root = findWidthRoot()
-      if (root === null || typeof getComputedStyle !== 'function') return null
-      try {
-        const raw = getComputedStyle(root).getPropertyValue('--dsh-chat-content-width').trim()
-        const px = parseFloat(raw)
-        return Number.isFinite(px) && px > 0 ? px : null
-      } catch {
-        return null
+      if (root === null) return null
+      const column = typeof root.offsetWidth === 'number' ? root.offsetWidth : 0
+      if (typeof getComputedStyle === 'function') {
+        try {
+          const raw = getComputedStyle(root).getPropertyValue('--dsh-chat-content-width').trim()
+          const px = parseFloat(raw)
+          if (Number.isFinite(px) && px > 0) return px
+        } catch {
+          /* 取不到就退回下面的公式。 */
+        }
       }
+      if (column <= 0) return null
+      return Math.min(defaultWidthPx(column), fullWidthPx(column))
     }
 
     /** 标记页脚那一排动作，让 CSS 把邻居拉齐到同一套图标节奏。 */
@@ -1372,9 +1384,14 @@ window.__ModuleLoader__.load({
             return root === null || typeof root.offsetWidth !== 'number' ? 0 : root.offsetWidth
           })()
           if (column <= 0) return
-          const target = appliedTierPx(tier, column, readCustomWidth())
+          /*
+           * 落点该和什么比：当前挡位的目标宽度。`standard` 没有「目标值」（`tierTargetPx`
+           * 返回 null），但它的落地宽度就是宿主默认公式，所以拿那个当基准——否则标准挡位下
+           * 随便点一下手柄就会被记成自定义。
+           */
+          const expected = appliedTierPx(tier, column, readCustomWidth()) ?? Math.min(defaultWidthPx(column), fullWidthPx(column))
           /* 落点和当前挡位的目标值一致就不改挡位；差 2px 以内视为没动过。 */
-          if (target !== null && Math.abs(px - target) <= 2) return
+          if (Math.abs(px - expected) <= 2) return
           if (event !== null && event !== undefined && event.type === 'pointerup') {
             rememberCustomWidth(px)
             tier = 'custom'
