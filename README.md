@@ -11,6 +11,41 @@ CSS 变量（导航插件借用输入条插件定义的 `--dsh-tidy-ctl`），�
 
 ---
 
+## 安装
+
+要求 DSH `>= 0.2.1-rc.5`、Node `^22.19.0 || >=24.0.0`。
+
+**方式一：Web 界面（最简单）**
+
+左栏「插件」→ 右上角安装框 → 粘贴 `github:HotAntOne/dsh-ui-fit` → 安装 → 打开开关。
+
+**方式二：命令行**
+
+`dsh plugin` 是把参数转发给 profile 目录里的 pnpm，所以用 `add`：
+
+```bash
+dsh plugin --profile web add github:HotAntOne/dsh-ui-fit
+```
+
+装到别的 profile 就换 `--profile` 的名字（`desktop` / `tui` / …）。装完刷新页面（Ctrl+R），
+不需要重启 DSH。卸载：
+
+```bash
+dsh plugin --profile web remove dsh-ui-fit
+```
+
+**方式三：本地源码**
+
+```bash
+git clone https://github.com/HotAntOne/dsh-ui-fit
+dsh plugin --profile web add /绝对路径/dsh-ui-fit
+```
+
+> 本仓库同时是一个可发布的 npm 包，`npm publish` 之后也能 `dsh plugin --profile web add dsh-ui-fit`。
+> 发布前请先把 `package.json` 里的 `author` 改成你自己的名字。
+
+---
+
 ## 装完之后在哪
 
 **设置（左下角账号菜单 → 设置）→ 左列「界面精简」**，三个开关：

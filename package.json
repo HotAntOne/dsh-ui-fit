@@ -7,6 +7,14 @@
   "license": "Apache-2.0",
   "author": "dsh-ui-fit contributors",
   "icon": "icon.svg",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HotAntOne/dsh-ui-fit.git"
+  },
+  "homepage": "https://github.com/HotAntOne/dsh-ui-fit#readme",
+  "bugs": {
+    "url": "https://github.com/HotAntOne/dsh-ui-fit/issues"
+  },
   "keywords": [
     "dsh",
     "dsh-plugin",
