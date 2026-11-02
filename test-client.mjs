@@ -1,0 +1,576 @@
+/**
+ * `dsh-ui-fit` 浏览器半边的离线冒烟测试。
+ *
+ * 用 vm 沙箱跑真实的 client.js：假的 `window.__ModuleLoader__`、假模块表（不提供
+ * primitives，走兜底分支）、假 Cordis 上下文、假 DOM。断言覆盖：
+ *
+ * 1. 模块形状与三个槽位注册；
+ * 2. 样式表里三段规则都在，且都用新的 `data-dsh-fit-*` 门控；
+ * 3. 导航三态循环、localStorage 持久化、图标随状态变化；
+ * 4. 宽度入口延后一拍转发、菜单已开时不转发；
+ * 5. 「更多」菜单的行与回调；
+ * 6. 三个开关真的能让对应规则失效（摘掉 `<html>` 属性）；
+ * 7. primitives 存在时走 Tooltip / MenuItemButton；
+ * 8. 清理时把标记和样式全部摘掉。
+ *
+ * 跑法：`node test-client.mjs`
+ */
+import fs from 'node:fs'
+import vm from 'node:vm'
+import assert from 'node:assert/strict'
+
+const SRC = 'C:/Users/JQW/Documents/deepseek-harness/default-workspace/dsh-ui-fit/client.js'
+
+/* ---------------- 假 DOM ---------------- */
+
+const styles = []
+const htmlAttrs = new Map()
+const navAttrs = new Set()
+const footAttrs = new Set()
+
+const fakeFoot = {
+  hasAttribute: (name) => footAttrs.has(name),
+  setAttribute: (name) => footAttrs.add(name),
+  removeAttribute: (name) => footAttrs.delete(name),
+}
+const fakeTrigger = { parentElement: fakeFoot }
+
+const fakeNav = {
+  className: 'wtg9ga_panelList',
+  hasAttribute: (name) => navAttrs.has(name),
+  setAttribute: (name) => navAttrs.add(name),
+  removeAttribute: (name) => navAttrs.delete(name),
+  querySelector: () => ({ kind: 'more' }),
+}
+
+const fakeRow = {
+  clientWidth: 400,
+  children: [],
+  getBoundingClientRect: () => ({ width: 400, height: 48, top: 0 }),
+}
+
+const fakeToggle = {
+  clicks: 0,
+  click() {
+    this.clicks += 1
+  },
+}
+const fakeMenu = {
+  open: false,
+  hasAttribute(name) {
+    return name === 'hidden' && !this.open
+  },
+}
+
+const bodyAttrs = new Map()
+const timers = []
+const flushTimers = () => {
+  for (const run of timers.splice(0)) run()
+}
+
+function fakeElement() {
+  return {
+    dataset: {},
+    textContent: '',
+    removed: false,
+    remove() {
+      this.removed = true
+      const at = styles.indexOf(this)
+      if (at >= 0) styles.splice(at, 1)
+    },
+  }
+}
+
+const document = {
+  head: { appendChild: (el) => styles.push(el) },
+  body: {
+    getAttribute: (name) => (bodyAttrs.has(name) ? bodyAttrs.get(name) : null),
+    setAttribute: (name, value) => bodyAttrs.set(name, value),
+    appendChild: () => {},
+  },
+  documentElement: {
+    setAttribute: (name, value) => htmlAttrs.set(name, value),
+    removeAttribute: (name) => htmlAttrs.delete(name),
+  },
+  getElementById: (id) => {
+    if (id === 'dsh-wide-toggle') return fakeToggle
+    if (id === 'dsh-width-menu') return fakeMenu
+    return null
+  },
+  createElement: () => fakeElement(),
+  querySelectorAll: (selector) => {
+    if (selector === 'nav') return [fakeNav]
+    if (selector === '[data-dsh-fit-foot]') return footAttrs.has('data-dsh-fit-foot') ? [fakeFoot] : []
+    if (selector === '[data-dsh-fit-navlist]') return navAttrs.has('data-dsh-fit-navlist') ? [fakeNav] : []
+    return []
+  },
+  querySelector: (selector) => {
+    if (selector === '[data-composer-card] > [class*="_row"]') return fakeRow
+    if (selector === 'nav[data-dsh-fit-navlist]') return navAttrs.has('data-dsh-fit-navlist') ? fakeNav : null
+    if (selector === '.dsh-fit-trigger') return fakeTrigger
+    if (selector === '[data-dsh-fit-foot]') return footAttrs.has('data-dsh-fit-foot') ? fakeFoot : null
+    return null
+  },
+}
+
+/* ---------------- 沙箱 ---------------- */
+
+let loadedSpec
+const sandbox = {
+  window: { __ModuleLoader__: { load: (spec) => (loadedSpec = spec) }, innerWidth: 400 },
+  document,
+  localStorage: {
+    store: new Map(),
+    getItem(key) {
+      return this.store.has(key) ? this.store.get(key) : null
+    },
+    setItem(key, value) {
+      this.store.set(key, String(value))
+    },
+  },
+  requestAnimationFrame: (fn) => {
+    fn()
+    return 1
+  },
+  cancelAnimationFrame: () => {},
+  setTimeout: (fn) => timers.push(fn),
+  matchMedia: (query) => ({
+    query,
+    matches: true,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }),
+  ResizeObserver: class {
+    observe() {}
+    disconnect() {}
+  },
+  MutationObserver: class {
+    observe() {}
+    disconnect() {}
+  },
+  console,
+}
+sandbox.window.document = document
+sandbox.globalThis = sandbox
+
+vm.runInNewContext(fs.readFileSync(SRC, 'utf8'), sandbox, { filename: 'client.js' })
+
+assert.equal(loadedSpec.id, 'dsh-ui-fit', '模块 id')
+assert.equal(typeof loadedSpec.factory, 'function', 'factory 是函数')
+
+/* ---------------- 假 React / 假上下文 ---------------- */
+
+const React = {
+  createElement(type, props, ...children) {
+    return { type, props: props || {}, children: children.flat() }
+  },
+  Fragment: 'Fragment',
+  useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+  useEffect: () => {},
+}
+
+const moduleTable = { react: React } // 故意不给 primitives
+const bundle = loadedSpec.factory((id) => {
+  if (id in moduleTable) return moduleTable[id]
+  throw new Error('MODULE_NOT_FOUND ' + id)
+})
+
+assert.equal(JSON.stringify(bundle.inject), '["slots","locale"]', 'bundle inject')
+assert.equal(typeof bundle.apply, 'function', 'apply 是函数')
+
+const registrations = []
+function makeCtx(extra) {
+  return {
+    effect(fn, label) {
+      const dispose = fn()
+      return typeof dispose === 'function' ? dispose : () => {}
+    },
+    locale: {
+      register: (ns, dicts) => {
+        assert.equal(ns, 'ui-fit', 'locale 命名空间')
+        assert.ok(dicts.zh && dicts.en, '中英双字典')
+        return () => {}
+      },
+      bind: () => (key) => key,
+    },
+    slots: {
+      inject(name, provider) {
+        const disposer = provider()
+        registrations.push({ name })
+        return disposer
+      },
+      register(spec, Component) {
+        assert.ok(spec.name && spec.id, '注册项有 name 和 id')
+        assert.equal(typeof Component, 'function', '注册的组件是函数')
+        return () => {}
+      },
+    },
+    ...(extra || {}),
+  }
+}
+
+const cleanup = bundle.apply(makeCtx())
+
+assert.deepEqual(
+  registrations.map((r) => r.name),
+  ['sidebar.footer.action', 'sidebar.footer.action', 'sidebar.panellist.actions', 'settings.section'],
+  '两个页脚按钮 + 一个「更多」菜单段 + 一个设置页',
+)
+
+/* ---------------- 样式表与门控 ---------------- */
+
+assert.equal(styles.length, 1, '只注入一张样式表')
+const css = styles[0].textContent
+assert.match(css, /--dsh-fit-ctl: clamp\(28px, 1\.5vw \+ 20px, 36px\)/, '控件直径变量定义在最前')
+assert.match(css, /data-dsh-fit-navmode="compact"/, '导航紧凑规则存在')
+assert.match(css, /data-dsh-fit-navmode="fold"/, '导航收纳规则存在')
+assert.match(css, /data-dsh-fit-composer="on"/, '输入条规则存在')
+assert.match(css, /data-dsh-fit-tight="on"/, '输入条窄行规则存在')
+assert.match(css, /data-dsh-fit-mobile="on"/, '手机密度规则存在')
+assert.ok(!/data-dsh-sfb-|data-dsh-tidy-|data-dsh-mobile-compact/.test(css), '旧属性名已全部替换')
+assert.match(css, /html:not\(\[data-dsh-fit-nav="on"\]\) \.dsh-fit-trigger\{display:none\}/, '关掉导航时按钮一起消失')
+assert.match(css, /#dsh-width-menu\{right:auto;left:12px;bottom:132px;z-index:2147483000/, '宽度菜单提到侧栏之上')
+assert.match(css, /--dsh-fit-context-shift:1px/, '上下文百分比下移量可调')
+assert.match(
+  css,
+  /\[data-composer-card\]\{--dsh-fit-btn:28px;--dsh-fit-icon:14px\}/,
+  '输入条图标按宿主节奏：28px 按钮 + 14px 图标',
+)
+assert.match(
+  css,
+  /\.pua-trigger\{width:var\(--dsh-fit-btn\);height:var\(--dsh-fit-btn\)/,
+  'PUA 按钮读统一按钮尺寸',
+)
+assert.match(css, /\.pua-entry-icon svg\{display:block;width:var\(--dsh-fit-icon\);height:var\(--dsh-fit-icon\)\}/, 'PUA 图标读统一图标尺寸')
+assert.ok(
+  !/--dsh-fit-ctl\)\{width:var\(--dsh-fit-ctl\);height:var\(--dsh-fit-ctl\)/.test(css) ||
+    !/\.pua-trigger\{width:var\(--dsh-fit-ctl\)/.test(css),
+  'PUA 按钮不再用导航那颗 36px 变量',
+)
+assert.match(
+  css,
+  /\[data-dsh-fit-tight="on"\] \[data-composer-card\]\{--dsh-fit-btn:28px;--dsh-fit-icon:14px\}/,
+  '窄行也只收紧间距，不把按钮改大',
+)
+assert.ok(
+  !/\[data-dsh-fit-tight="on"\] \[data-composer-card\]\{--dsh-fit-ctl:34px/.test(css),
+  '窄行不再覆盖导航那颗控件直径变量',
+)
+assert.match(css, /\.dsh-fit-switch\[data-on="on"\]\{background:var\(--dsw-alias-brand-primary\)\}/, '开关打开态用品牌色')
+assert.match(css, /\.dsh-fit-settings\{/, '设置页样式段存在')
+assert.ok(
+  !/html:not\(\[data-dsh-fit-(nav|composer|mobile)="on"\]\)[^{]*\.dsh-fit-settings/.test(css),
+  '设置页不归任何开关管（否则关掉就再也开不回来）',
+)
+
+assert.equal(htmlAttrs.get('data-dsh-fit'), 'on', '根标记')
+assert.equal(htmlAttrs.get('data-dsh-fit-nav'), 'on', '导航默认开')
+assert.equal(htmlAttrs.get('data-dsh-fit-composer'), 'on', '输入条默认开')
+assert.equal(htmlAttrs.get('data-dsh-fit-mobile'), 'on', '手机密度默认开（matchMedia 命中）')
+assert.equal(htmlAttrs.get('data-dsh-fit-tight'), 'on', '行宽 400 < 560，窄行标记生效')
+assert.equal(htmlAttrs.get('data-dsh-fit-width'), 'on', '检测到宽度挡位插件')
+assert.equal(htmlAttrs.get('data-dsh-fit-navmode'), undefined, '标准态不打三态属性')
+assert.ok(navAttrs.has('data-dsh-fit-navlist'), '面板 nav 已标记')
+assert.ok(footAttrs.has('data-dsh-fit-foot'), '页脚那一排已标记')
+
+/* ---------------- 组件 ---------------- */
+
+let navComponent
+let widthComponent
+let menuComponent
+let settingsComponent
+const ctx2 = makeCtx({
+  slots: {
+    inject: (name, provider) => provider(),
+    register(spec, Component) {
+      if (spec.id === 'dsh-ui-fit-nav') navComponent = Component
+      if (spec.id === 'dsh-ui-fit-width') widthComponent = Component
+      if (spec.name === 'sidebar.panellist.actions') menuComponent = Component
+      if (spec.name === 'settings.section') settingsComponent = Component
+      return () => {}
+    },
+  },
+})
+const cleanup2 = bundle.apply(ctx2)
+assert.equal(typeof navComponent, 'function')
+assert.equal(typeof widthComponent, 'function')
+assert.equal(typeof menuComponent, 'function')
+assert.equal(typeof settingsComponent, 'function', '设置页组件已注册')
+
+const t = (key) => 'L:' + key
+
+const navTree = navComponent({ wide: true, t })
+assert.equal(navTree.type, 'button', '没有 primitives 时是普通按钮')
+assert.equal(navTree.props.className, 'dsh-fit-trigger')
+assert.equal(navTree.props['data-mode'], 'standard', '起始是标准态')
+assert.equal(navTree.props.title, 'L:nav.hint', '没有 Tooltip 时用原生 title')
+assert.equal(navTree.children.length, 1, '只放图标')
+assert.equal(navTree.children[0].props.className, 'dsh-fit-glyph')
+const standardGlyph = navTree.children[0].children[0]
+assert.equal(standardGlyph.type, 'svg', '导航图标是自绘的')
+assert.equal(standardGlyph.props.viewBox, '0 0 16 16')
+assert.equal(standardGlyph.props.width, 14, '与页脚其它按钮同一节奏')
+assert.equal(standardGlyph.children.length, 3, '标准态三行')
+
+const widthTree = widthComponent({ wide: true, t })
+assert.equal(widthTree.props.className, 'dsh-fit-trigger dsh-fit-width')
+assert.equal(widthTree.props['data-tier'], 'standard', '默认标准挡位')
+const tierSvg = widthTree.children[0].children[0]
+assert.equal(tierSvg.children.length, 6, '六个挡位六根条')
+assert.equal(tierSvg.children[0].props.opacity, 1, '当前挡位之前点亮')
+assert.equal(tierSvg.children[5].props.opacity, 0.3, '之后变暗')
+
+const before = fakeToggle.clicks
+widthTree.props.onClick()
+assert.equal(fakeToggle.clicks, before, '延后一拍：当前点击先走完')
+flushTimers()
+assert.equal(fakeToggle.clicks, before + 1, '下一拍才转发')
+fakeMenu.open = true
+widthTree.props.onClick()
+flushTimers()
+assert.equal(fakeToggle.clicks, before + 1, '菜单已开时交给它自己的 click-away')
+fakeMenu.open = false
+
+/* ---------------- 三态循环 ---------------- */
+
+navTree.props.onClick()
+assert.equal(htmlAttrs.get('data-dsh-fit-navmode'), 'compact', '第二态：紧凑')
+assert.equal(sandbox.localStorage.getItem('dsh-ui-fit:nav'), 'compact', '持久化到新键')
+const compactTree = navComponent({ wide: true, t })
+assert.equal(compactTree.children[0].children[0].children.length, 3, '紧凑态仍是三行')
+assert.notEqual(
+  compactTree.children[0].children[0].children[0].props.d,
+  standardGlyph.children[0].props.d,
+  '紧凑态行距更近',
+)
+
+compactTree.props.onClick()
+assert.equal(htmlAttrs.get('data-dsh-fit-navmode'), 'fold', '第三态：收纳')
+const foldTree = navComponent({ wide: true, t })
+assert.equal(foldTree.children[0].children[0].children.length, 2, '收纳态一行 + 一个尖角')
+assert.equal(foldTree.props['aria-label'], 'L:nav.aria: L:nav.fold')
+
+foldTree.props.onClick()
+assert.equal(sandbox.localStorage.getItem('dsh-ui-fit:nav'), 'standard', '第四次点击回到标准')
+assert.equal(htmlAttrs.has('data-dsh-fit-navmode'), false, '标准态摘掉三态属性')
+
+/* ---------------- 「更多」菜单 ---------------- */
+
+const opened = []
+const dismissed = []
+const menuTree = menuComponent({
+  entries: [
+    { id: 'plugin-market', label: '插件市场', active: true },
+    { id: 'ssh', label: 'SSH' },
+  ],
+  onOpen: (id) => opened.push(id),
+  onDismiss: () => dismissed.push(1),
+  t: (key) => key,
+})
+assert.equal(menuTree.children.length, 3, '插件管理 + 两个面板')
+assert.equal(menuTree.children[0].props.className, 'dsh-fit-fallback-row', '没有 primitives 时用兜底行')
+menuTree.children[0].props.onClick()
+menuTree.children[2].props.onClick()
+assert.deepEqual(opened, ['plugins', 'ssh'], '打开的面板 id')
+assert.equal(dismissed.length, 2, '每行先关菜单')
+
+/* ---------------- 开关真的能停掉规则 ---------------- */
+
+const cleanup3 = bundle.apply(
+  makeCtx({
+    inject(services, provider) {
+      /* 数组来自 vm realm，原型不同，只能结构化比较。 */
+      assert.equal(JSON.stringify(services), '["configForms"]', '注入 configForms')
+      provider({
+        configForms: {
+          get: (ns) => {
+            assert.equal(ns, 'dsh-ui-fit', '命名空间等于行 id')
+            return {
+              getSnapshot: () => ({ value: { nav: false, composer: false, mobile: false } }),
+              subscribe: () => () => {},
+            }
+          },
+          describe: () => ({ getSnapshot: () => ({ view: undefined }), subscribe: () => () => {} }),
+        },
+      })
+    },
+  }),
+)
+
+assert.equal(htmlAttrs.has('data-dsh-fit-nav'), false, '关掉导航：属性摘掉，规则随之失效')
+assert.equal(htmlAttrs.has('data-dsh-fit-navmode'), false, '关掉导航：三态属性也摘掉')
+assert.equal(htmlAttrs.has('data-dsh-fit-composer'), false, '关掉输入条：属性摘掉')
+assert.equal(htmlAttrs.has('data-dsh-fit-tight'), false, '关掉输入条：窄行标记也摘掉')
+assert.equal(htmlAttrs.has('data-dsh-fit-mobile'), false, '关掉手机密度：属性摘掉')
+assert.equal(htmlAttrs.get('data-dsh-fit'), 'on', '根标记保留（插件还在）')
+cleanup3()
+
+/* 直接 id 拿不到（bundle 条目 ns 带前缀）时，用字段指纹从 describe 里认领。 */
+let mirrorPush
+const discoveredNs = []
+const cleanup3b = bundle.apply(
+  makeCtx({
+    inject(services, provider) {
+      provider({
+        configForms: {
+          get: (ns) => {
+            discoveredNs.push(ns)
+            if (ns === 'dsh-ui-fit') return { getSnapshot: () => ({ value: undefined }), subscribe: () => () => {} }
+            return {
+              getSnapshot: () => ({ value: { nav: true, composer: false, mobile: true } }),
+              subscribe: () => () => {},
+            }
+          },
+          describe: () => ({
+            getSnapshot: () => ({
+              view: { namespaces: [{ ns: 'dsh-bundle:dsh-ui-fit', value: { nav: true, composer: false, mobile: true } }] },
+            }),
+            subscribe: (listener) => {
+              mirrorPush = listener
+              return () => {}
+            },
+          }),
+        },
+      })
+    },
+  }),
+)
+assert.ok(discoveredNs.includes('dsh-bundle:dsh-ui-fit'), '按指纹认领到真实命名空间')
+assert.equal(htmlAttrs.has('data-dsh-fit-composer'), false, '认领后读到 composer=false')
+assert.equal(htmlAttrs.get('data-dsh-fit-nav'), 'on', 'nav 仍为开')
+assert.equal(typeof mirrorPush, 'function', '订阅了配置镜像')
+cleanup3b()
+
+/* ---------------- 设置页 ---------------- */
+
+const setCalls = []
+let settingsSection
+const settingsForm = {
+  getSnapshot: () => ({ value: { nav: true, composer: true, mobile: true } }),
+  subscribe: () => () => {},
+  set: (field, value) => {
+    setCalls.push([field, value])
+    return Promise.resolve(true)
+  },
+}
+const cleanup5 = bundle.apply(
+  makeCtx({
+    inject(services, provider) {
+      provider({
+        configForms: {
+          get: () => settingsForm,
+          describe: () => ({ getSnapshot: () => ({ view: undefined }), subscribe: () => () => {} }),
+        },
+      })
+    },
+    slots: {
+      inject: (name, provider) => provider(),
+      register(spec, Component) {
+        if (spec.name === 'settings.section') settingsSection = Component
+        return () => {}
+      },
+    },
+  }),
+)
+assert.equal(typeof settingsSection, 'function', '设置页组件已捕获')
+
+const settingsTree = settingsSection({ t, close: () => {} })
+assert.equal(settingsTree.type, 'div')
+assert.equal(settingsTree.props.className, 'dsh-fit-settings')
+assert.equal(settingsTree.props['data-dsh-fit-settings'], '', '带自己的根标记')
+assert.equal(settingsTree.children.length, 6, '标题 + 说明 + 三行开关 + 存储说明')
+assert.equal(settingsTree.children[0].type, 'h2')
+assert.equal(settingsTree.children[0].children[0], 'L:settings.title', '标题走 locale')
+assert.equal(settingsTree.children[1].props.className, 'dsh-fit-settings-desc')
+assert.equal(settingsTree.children[5].props.className, 'dsh-fit-settings-note', '存储说明在最后')
+
+const navRowElement = settingsTree.children[2]
+assert.equal(typeof navRowElement.type, 'function', '行是组件')
+const navRow = navRowElement.type(navRowElement.props)
+assert.equal(navRow.props.className, 'dsh-fit-srow')
+assert.equal(navRow.children[0].props.className, 'dsh-fit-srow-main')
+assert.equal(navRow.children[0].children[0].children[0], 'L:settings.nav.title')
+assert.equal(navRow.children[0].children[1].children[0], 'L:settings.nav.description')
+
+const navSwitch = navRow.children[1]
+assert.equal(navSwitch.type, 'button')
+assert.equal(navSwitch.props.className, 'dsh-fit-switch')
+assert.equal(navSwitch.props.role, 'switch', '无障碍语义是开关')
+assert.equal(navSwitch.props['aria-checked'], 'true', '默认开')
+assert.equal(navSwitch.props['data-on'], 'on', '开启态给样式钩子')
+assert.equal(navSwitch.props['data-field'], 'nav')
+assert.equal(navSwitch.props.disabled, false, '配置已就绪时可点')
+assert.equal(navSwitch.props['aria-label'], 'L:settings.nav.title：L:settings.on')
+assert.equal(navSwitch.children[0].props.className, 'dsh-fit-switch-knob')
+
+navRowElement.props.onToggle('nav', false)
+assert.deepEqual(setCalls, [['nav', false]], '点击写入本插件的配置命名空间')
+
+const offRow = navRowElement.type({ ...navRowElement.props, value: false })
+assert.equal(offRow.children[1].props['aria-checked'], 'false')
+assert.equal(offRow.children[1].props['data-on'], 'off')
+assert.equal(offRow.children[1].props['aria-label'], 'L:settings.nav.title：L:settings.off')
+cleanup5()
+
+/* ---------------- 有 primitives 时 ---------------- */
+
+const Icon = (props) => ({ type: 'Icon', props, children: [] })
+const primitives = {
+  MenuItemButton: (props) => ({ type: 'MenuItemButton', props, children: [props.children] }),
+  Tooltip: (props) => ({ type: 'Tooltip', props, children: [props.children] }),
+  IconPluginPinwheelOutlineRegular: Icon,
+}
+const bundle2 = loadedSpec.factory((id) => {
+  if (id === '@deepseek-ai/dsh-client-ui-primitives') return primitives
+  if (id === 'react') return React
+  throw new Error('MODULE_NOT_FOUND ' + id)
+})
+
+let fancyNav
+let fancyMenu
+const cleanup4 = bundle2.apply(
+  makeCtx({
+    slots: {
+      inject: (name, provider) => provider(),
+      register(spec, Component) {
+        if (spec.id === 'dsh-ui-fit-nav') fancyNav = Component
+        if (spec.name === 'sidebar.panellist.actions') fancyMenu = Component
+        return () => {}
+      },
+    },
+  }),
+)
+
+const fancyTree = fancyNav({ wide: true, t })
+assert.equal(fancyTree.type, primitives.Tooltip, '有 primitives 时套 Tooltip')
+assert.equal(fancyTree.children[0].type, 'button')
+assert.equal(fancyTree.children[0].props.title, undefined, '有 Tooltip 就不留原生 title')
+const fancyGlyph = fancyTree.children[0].children[0].children[0]
+assert.equal(fancyGlyph.props.stroke, 'currentColor', '图标继承按钮颜色')
+assert.equal(fancyGlyph.children.length, 3, '标准态三行')
+
+const fancyMenuTree = fancyMenu({
+  entries: [{ id: 'ssh', label: 'SSH' }],
+  onOpen: () => {},
+  onDismiss: () => {},
+  t: (key) => key,
+})
+assert.equal(fancyMenuTree.children[0].type, primitives.MenuItemButton, '插件管理行用 MenuItemButton')
+assert.equal(fancyMenuTree.children[0].props.icon.type, Icon, '行图标来自 primitives')
+assert.equal(fancyMenuTree.children[1].props.current, false, '非当前行不点亮')
+cleanup4()
+
+/* ---------------- 清理 ---------------- */
+
+cleanup2()
+cleanup()
+assert.equal(styles.length, 0, '样式表已移除')
+assert.equal(htmlAttrs.has('data-dsh-fit'), false, '根标记已摘')
+assert.equal(htmlAttrs.has('data-dsh-fit-nav'), false, '导航标记已摘')
+assert.equal(htmlAttrs.has('data-dsh-fit-composer'), false, '输入条标记已摘')
+assert.equal(htmlAttrs.has('data-dsh-fit-mobile'), false, '手机密度标记已摘')
+assert.equal(htmlAttrs.has('data-dsh-fit-width'), false, '宽度存在性标记已摘')
+assert.equal(navAttrs.has('data-dsh-fit-navlist'), false, 'nav 标记已摘')
+assert.equal(footAttrs.has('data-dsh-fit-foot'), false, '页脚标记已摘')
+
+console.log('OK dsh-ui-fit client smoke test')
