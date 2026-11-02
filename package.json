@@ -70,7 +70,7 @@
   },
   "scripts": {
     "check": "node --check client.js && node --check index.js",
-    "test": "node lint-identifiers.mjs && node test-client.mjs && node check-hooks.mjs",
+    "test": "node ensure-deps.mjs && node lint-identifiers.mjs && node test-client.mjs && node check-hooks.mjs",
     "check:hooks": "node check-hooks.mjs",
     "setup": "node ensure-deps.mjs"
   },
