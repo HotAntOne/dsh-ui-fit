@@ -52,8 +52,15 @@ window.__ModuleLoader__.load({
     const ATTR_MOBILE = 'data-dsh-fit-mobile'
     /** 标记全局面板 `<nav>`。 */
     const ATTR_NAVLIST = 'data-dsh-fit-navlist'
+    /**
+     * 面板导航的槽位锚点。`data-slot` 由渲染器写死，是宿主公开契约；
+     * 类名（`wtg9ga_panelList`）是构建哈希，宿主改版就变，只作兜底。
+     */
+    const NAV_SLOT_SELECTOR = '[data-slot="sidebar.panellist"]'
     /** 标记页脚那一排动作。 */
     const ATTR_FOOT = 'data-dsh-fit-foot'
+    /** 页脚动作排的槽位锚点（宿主契约，改版不动）。 */
+    const FOOT_SLOT_SELECTOR = '[data-slot="sidebar.footer.action"]'
     /** 宽度挡位插件是否存在。 */
     const ATTR_WIDTH = 'data-dsh-fit-width'
 
@@ -714,8 +721,19 @@ window.__ModuleLoader__.load({
      * 标记全局面板 `<nav>`：类名里仍带 `panelList` 局部名，且含宿主「更多」那一行。
      * 两个条件都要满足，免得把别的导航区块（设置面板等）一起收进去。
      */
+    /**
+     * 标记全局面板 `<nav>`。
+     *
+     * 首选槽位锚点 `[data-slot="sidebar.panellist"]`：`data-slot` 是渲染器写死的槽位名，
+     * 属宿主公开契约，改版也不动。拿不到时退回「类名含 `panelList` 且含『更多』行」的
+     * 老判据——那是哈希类名，宿主换构建就会变。
+     */
     function tagNav() {
       if (typeof document === 'undefined') return
+      for (const anchor of document.querySelectorAll(NAV_SLOT_SELECTOR)) {
+        const nav = typeof anchor.closest === 'function' ? anchor.closest('nav') : null
+        if (nav !== null) nav.setAttribute(ATTR_NAVLIST, '')
+      }
       for (const nav of document.querySelectorAll('nav')) {
         if (nav.hasAttribute(ATTR_NAVLIST)) continue
         const className = typeof nav.className === 'string' ? nav.className : ''
@@ -750,10 +768,17 @@ window.__ModuleLoader__.load({
       return Math.min(defaultWidthPx(column), fullWidthPx(column))
     }
 
-    /** 标记页脚那一排动作，让 CSS 把邻居拉齐到同一套图标节奏。 */
+    /**
+     * 标记页脚那一排动作，让 CSS 把邻居拉齐到同一套图标节奏。
+     *
+     * 首选槽位锚点 `[data-slot="sidebar.footer.action"]`（宿主契约，改版不动）；
+     * 退回「自己按钮的父元素」与「`dsh-mobile` 触发器的父元素」——后者是第三方插件，
+     * 没装时自然找不到，不影响主体。
+     */
     function tagFoot() {
       if (typeof document === 'undefined') return
       const rows = []
+      for (const anchor of document.querySelectorAll(FOOT_SLOT_SELECTOR)) rows.push(anchor)
       const trigger = document.querySelector('.' + TRIGGER_CLASS)
       if (trigger !== null && trigger.parentElement !== null) rows.push(trigger.parentElement)
       const mobile = document.querySelector('.dsh-mobile-control__trigger')

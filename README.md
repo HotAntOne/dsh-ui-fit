@@ -205,6 +205,18 @@ node check-hooks.mjs            # 宿主升级后体检：CSS 钩子还在不在
 （`data-composer-dock`、`data-conversation-tabs`、`_titleRow` 之类）是否还存在。宿主升级
 后跑一次，退出码 1 就说明有钩子改名了，对应规则会静默失效。
 
+三类结果分别看：
+
+| 前缀 | 含义 | 要不要管 |
+|---|---|---|
+| `✓` | 钩子在 | 不用 |
+| `–` 跳过（未装某插件） | 那台机器没装该第三方插件，规则本就不生效 | 不用 |
+| `–` 跳过（旧兜底判据） | 有契约锚点接管了，旧判据可以没有 | 不用 |
+| `✗` | 宿主真的改版了 | **要修选择器** |
+
+`--dir <路径>` 可指定别的 profile 的 `node_modules`（默认当前 `desktop`），
+`--asar <路径>` 可指定 asar 位置（默认按常见安装路径探测）。
+
 **人工验证清单**：
 
 1. 左栏底部有两颗小图标；点三横线那颗，面板行依次变成紧凑、收纳、标准。
@@ -228,6 +240,9 @@ node check-hooks.mjs            # 宿主升级后体检：CSS 钩子还在不在
 - **门控属性**：`data-dsh-fit-nav` / `data-dsh-fit-composer` / `data-dsh-fit-mobile` /
   `data-dsh-fit-width`，外加 `data-dsh-fit-navmode`（三态）和 `data-dsh-fit-tight`（实测窄行）。
   关开关就是摘属性，规则随之失效。
+- **认元素优先用宿主契约**：`[data-slot="sidebar.panellist"]`、`[data-slot="sidebar.footer.action"]`、
+  `[data-conversation-content]`、`[data-sidebar-chat]` 都是渲染器写死的槽位名/属性，
+  改版不动；`wtg9ga_panelList` 这类哈希类名只作兜底。
 - **宽度轴是接管不是覆盖**：写宿主自己的 `--dsh-chat-user-width` 与
   `localStorage['dsh.conversation.contentWidth']`，宿主的拖拽手柄与 `ResizeObserver` 照常工作。
   详见第四节。
@@ -254,6 +269,32 @@ node check-hooks.mjs            # 宿主升级后体检：CSS 钩子还在不在
 | 手机 | 三者全生效 | 完全一致（默认全开） |
 
 宽度挡位在两种端上都生效（它是内容宽度，不是触控布局）。
+
+### 没装其它插件会怎样
+
+本插件**不 import 任何第三方插件的代码**，只 `require('react')`，primitives 拿不到就走朴素元素兜底。
+所以：
+
+| 情况 | 结果 |
+|---|---|
+| 没装 `dsh-mobile` | 正常。页脚只对齐自己的按钮；`dsh-mobile` 那条 44px 反制规则静默失效 |
+| 没装 `dsh-better-input` / `@michengai/dsh-pua` / `dsh-cost-meter` | 正常。对应的对齐规则静默失效，不报错、不影响软件 |
+| 没装任何第三方插件 | 正常。`npm test` 也通过（这 13 个钩子带 `owner` 标记，owner 没装就跳过并单独计数） |
+| 换一台没有 asar 的机器跑 `npm test` | `check-hooks.mjs` 按常见安装位置探测 asar；真找不到时用 `--asar <路径>` 指定 |
+
+依赖第三方的样式规则占比：输入条 9/28、手机密度 21/40；导航与宽度段**零依赖**。
+
+### 选择器用的是契约还是哈希类名
+
+宿主渲染器会给每个槽位包一层 `<div data-slot="<slotKey>" style="display:contents">`，
+`data-slot` 的槽位名是**公开契约**，宿主改版不动；`wtg9ga_panelList` 这类是构建哈希类名，换版本就变。
+
+本插件因此优先走契约：
+
+| 用途 | 首选（契约） | 兜底（哈希类名） |
+|---|---|---|
+| 面板导航 `<nav>` | `[data-slot="sidebar.panellist"]` 向上找 `nav` | 类名含 `panelList` 且有「更多」行 |
+| 页脚动作排 | `[data-slot="sidebar.footer.action"]` | 自己按钮的父元素 |
 
 开关的存储方式：
 

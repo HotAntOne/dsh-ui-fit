@@ -13,10 +13,24 @@
  *
  * 退出码：0 全部命中；1 有缺失。
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-const DEFAULT_ASAR = 'D:/Program Files/DeepSeek Harness/resources/app.asar'
+/**
+ * asar 的位置各平台不同，按常见安装路径依次探测，都没有再让人用 `--asar` 指定。
+ *
+ * 注意：脚本本身**不需要** asar——只想知道「这台机器装了哪些插件」时用 `--dir` 就够，
+ * 读不到 asar 只会让宿主那一半的钩子报缺失。
+ */
+const ASAR_CANDIDATES = [
+  'D:/Program Files/DeepSeek Harness/resources/app.asar',
+  'C:/Program Files/DeepSeek Harness/resources/app.asar',
+  `${process.env.LOCALAPPDATA ?? ''}/Programs/DeepSeek Harness/resources/app.asar`,
+  '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
+  '/opt/DeepSeek Harness/resources/app.asar',
+  '/usr/lib/deepseek-harness/resources/app.asar',
+]
+const DEFAULT_ASAR = ASAR_CANDIDATES.find((p) => p !== '' && existsSync(p)) ?? ASAR_CANDIDATES[0]
 const DEFAULT_DIR = `${process.env.HOME ?? process.env.USERPROFILE}/.dsh/profiles/desktop/node_modules`
 
 /**
@@ -25,9 +39,12 @@ const DEFAULT_DIR = `${process.env.HOME ?? process.env.USERPROFILE}/.dsh/profile
  */
 const HOOKS = [
   /* ---- 一、左栏导航 ---- */
-  { needle: '_panelList', label: '导航：全局面板 nav 的类名局部名' },
-  { needle: 'aria-haspopup', label: '导航：宿主「更多」行（区分面板 nav 用）' },
-  { needle: 'dsh-mobile-control__trigger', label: '导航：页脚 dsh-mobile 触发器（对齐图标节奏用）' },
+  { needle: 'data-slot', label: '导航/页脚：槽位锚点（渲染器契约，改版不动）' },
+  { needle: 'sidebar.panellist', label: '导航：面板列表槽位名' },
+  { needle: 'sidebar.footer.action', label: '页脚：动作排槽位名' },
+  { needle: '_panelList', label: '导航：全局面板 nav 的类名局部名（旧兜底）', optional: true },
+  { needle: 'aria-haspopup', label: '导航：宿主「更多」行（区分面板 nav 用）', optional: true },
+  { needle: 'dsh-mobile-control__trigger', label: '导航：页脚 dsh-mobile 触发器（对齐图标节奏用）', owner: 'dsh-mobile' },
   /* ---- 二、对话宽度（1.2.0 起自实现，不再依赖第三方插件） ---- */
   { needle: 'data-conversation-content', label: '宽度：主对话区根元素（宽度变量发布点）' },
   { needle: 'data-sidebar-chat', label: '宽度：侧栏会话副本（要排除的那份）' },
@@ -36,34 +53,34 @@ const HOOKS = [
   { needle: 'data-width-handle', label: '宽度：拖拽手柄（读数 guide 挂在它上面）' },
 
   /* ---- 三、输入条 ---- */
-  { needle: 'data-better-input-state', label: '输入条：语音按钮（隐藏目标）' },
-  { needle: 'pua-trigger', label: '输入条：PUA 控件' },
-  { needle: 'pua-entry-icon', label: '输入条：PUA 图标' },
+  { needle: 'data-better-input-state', label: '输入条：语音按钮（隐藏目标）', owner: 'dsh-better-input' },
+  { needle: 'pua-trigger', label: '输入条：PUA 控件', owner: '@michengai/dsh-pua' },
+  { needle: 'pua-entry-icon', label: '输入条：PUA 图标', owner: '@michengai/dsh-pua' },
   { needle: 'data-composer-card', label: '输入条：输入卡（窄行测量与精确选择器）' },
   { needle: '_triggerIcon', label: '输入条：模式控件的图标（:has 守卫）' },
   { needle: '_triggerLabel', label: '输入条：模式控件的文字' },
   { needle: '_chevron', label: '输入条：模式控件的箭头' },
   { needle: '_trailing', label: '输入条：右侧控件组类名后缀' },
   { needle: '_standardControls', label: '输入条：模型选择器容器类名后缀' },
-  { needle: 'data-dsh-mobile-composer-row', label: '输入条：dsh-mobile 的 44px 触控下限（要反制）' },
-  { needle: 'data-dsh-mobile-composer-trailing', label: '输入条：dsh-mobile 右侧容器' },
+  { needle: 'data-dsh-mobile-composer-row', label: '输入条：dsh-mobile 的 44px 触控下限（要反制）', owner: 'dsh-mobile' },
+  { needle: 'data-dsh-mobile-composer-trailing', label: '输入条：dsh-mobile 右侧容器', owner: 'dsh-mobile' },
 
   /* ---- 四、手机端密度 ---- */
   { needle: 'data-composer-dock', label: '手机：底部状态条容器' },
   { needle: 'data-composer-stat', label: '手机：统计胶囊（计时/用量）' },
   { needle: 'data-conversation-tabs', label: '手机：视图标签行' },
-  { needle: 'data-dsh-mobile-header', label: '手机：顶栏' },
+  { needle: 'data-dsh-mobile-header', label: '手机：顶栏', owner: 'dsh-mobile' },
   { needle: 'data-turn-tail', label: '手机：消息操作行 / 每轮费用行' },
   { needle: 'data-turn-process', label: '手机：「已完成，用时」行' },
   { needle: 'data-turn-trigger', label: '手机：「收到执行请求」行' },
   { needle: 'data-chat-running', label: '手机：「深度求索中」行' },
   { needle: 'data-process-activity', label: '手机：活动状态区' },
-  { needle: 'pua-activity-header', label: '手机：PUA 活动头' },
-  { needle: 'cm-note', label: '手机：每轮费用行' },
-  { needle: 'cm-btn', label: '手机：费用按钮' },
-  { needle: 'cm-session-detail', label: '手机：本会话明细' },
-  { needle: 'cm-stat-entry', label: '手机：费用明细入口' },
-  { needle: 'cm-session-cost', label: '手机：本会话合计' },
+  { needle: 'pua-activity-header', label: '手机：PUA 活动头', owner: '@michengai/dsh-pua' },
+  { needle: 'cm-note', label: '手机：每轮费用行', owner: 'dsh-cost-meter' },
+  { needle: 'cm-btn', label: '手机：费用按钮', owner: 'dsh-cost-meter' },
+  { needle: 'cm-session-detail', label: '手机：本会话明细', owner: 'dsh-cost-meter' },
+  { needle: 'cm-stat-entry', label: '手机：费用明细入口', owner: 'dsh-cost-meter' },
+  { needle: 'cm-session-cost', label: '手机：本会话合计', owner: 'dsh-cost-meter' },
   { needle: '_headerActions', label: '手机：顶栏操作区类名后缀' },
   { needle: '_headerUtilities', label: '手机：顶栏工具区类名后缀' },
   { needle: '_headerCorner', label: '手机：顶栏角落（工作区芯片）类名后缀' },
@@ -166,20 +183,48 @@ if (corpus.length === 0) {
 }
 
 const text = corpus.join('\n')
-let missing = 0
-for (const { needle, label } of HOOKS) {
-  const count = text.split(needle).length - 1
-  if (count === 0) {
-    missing += 1
-    console.log(`✗ ${label}：找不到 ${needle}`)
-  } else {
-    console.log(`✓ ${label}：${needle} ×${count}`)
-  }
+
+/**
+ * 已装包名集合：用来区分「宿主改版了」和「这台机器根本没装那个第三方插件」。
+ *
+ * 带 `owner` 的钩子只服务于某个第三方插件（dsh-mobile 的 44px 反制、PUA 输入条图标、
+ * 费用胶囊等）。那台机器没装该插件时，选择器当然找不到——**这是正常状态，不是失配**，
+ * 报成 ✗ 会让全新机器上的 `npm test` 直接失败。
+ */
+const installed = new Set()
+try {
+  for (const name of readdirSync(extraDir)) installed.add(name)
+} catch {
+  /* 目录不存在就当作什么都没装。 */
 }
 
-console.log(
-  missing === 0
-    ? '\n全部钩子都在：本版插件与当前 DSH 匹配。'
-    : `\n有 ${missing} 个钩子缺失：对应规则会静默失效，需要按新 DOM 修选择器（不会损坏软件）。`,
-)
+let missing = 0
+let skipped = 0
+for (const { needle, label, owner, optional } of HOOKS) {
+  const count = text.split(needle).length - 1
+  if (count > 0) {
+    console.log(`✓ ${label}：${needle} ×${count}`)
+    continue
+  }
+  if (owner !== undefined && !installed.has(owner)) {
+    skipped += 1
+    console.log(`– ${label}：跳过（未装 ${owner}，该规则本就不生效）`)
+    continue
+  }
+  /* `optional` 表示这条规则有契约兜底（例如面板 nav 还能靠 data-slot 认出来），
+     单条旧判据缺失不算失配，只提示。 */
+  if (optional === true) {
+    skipped += 1
+    console.log(`– ${label}：跳过（旧兜底判据，已有契约锚点接管）`)
+    continue
+  }
+  missing += 1
+  console.log(`✗ ${label}：找不到 ${needle}`)
+}
+
+if (missing === 0) console.log('\n全部钩子都在：本版插件与当前 DSH 匹配。')
+else console.log(`\n有 ${missing} 个钩子缺失：对应规则会静默失效，需要按新 DOM 修选择器（不会损坏软件）。`)
+if (skipped > 0) {
+  console.log(`另有 ${skipped} 个钩子因未装对应第三方插件而跳过——这是正常状态。`)
+}
 process.exit(missing === 0 ? 0 : 1)

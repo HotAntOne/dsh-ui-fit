@@ -1,5 +1,30 @@
 # 更新记录
 
+## 1.2.2
+
+**健壮性：第三方插件不在时不再报错，导航/页脚改走宿主公开锚点**
+
+这一版没有改视觉效果，改的是「换一台机器还能不能用」。
+
+1. `check-hooks.mjs` 以前把 `dsh-mobile`、`dsh-better-input`、`@michengai/dsh-pua`、
+   `dsh-cost-meter` 提供的选择器也当成本插件必需的钩子。那台机器没装某个插件时，
+   选择器当然找不到，脚本判定失配并 exit 1——**全新机器上 `npm test` 直接失败**。
+   现在这 13 个钩子带 `owner` 标记：该 owner 没装就跳过，并单独统计行数，不再算失配。
+2. `check-hooks.mjs` 的 asar 路径改为按常见安装位置依次探测（Windows 两个盘、
+   `%LOCALAPPDATA%`、macOS、Linux），都找不到时仍可用 `--asar` 指定；同时删掉了
+   源码里 `corpus.join('\\n')` 的双反斜杠（拼出来是字面 `\n` 两个字符）。
+3. `test-client.mjs` 的 `client.js` 路径改成相对本文件解析，换 clone 目录、换机器都不用改。
+4. 导航与页脚的 DOM 标记改走**宿主公开契约** `[data-slot="sidebar.panellist"]` 与
+   `[data-slot="sidebar.footer.action"]`（渲染器写死的槽位名），哈希类名
+   `wtg9ga_panelList` 降级为兜底。宿主换构建导致类名变化时，本插件不再失效。
+5. `check-hooks.mjs` 新增三条槽位锚点钩子，`_panelList` / `aria-haspopup` 标为 `optional`。
+
+真实 GUI（端口 7711）复验：6 个 `[data-slot="sidebar.panellist"]` 锚点的 `closest('nav')`
+全部指向同一个面板 `nav`（`uniqueNavsFromSlot: 1`），标记成功——锚点在 `nav` 内部，
+所以方向是「锚点向上找 nav」，不是「nav 向下找锚点」。页脚标记落在
+`[data-slot="sidebar.footer.action"]` 本身（`display:contents`，5 个子节点），
+两颗按钮 `aria-label` 与四个门控属性都正常，样式表 17244 字符。
+
 ## 1.2.1
 
 **修复：拖拽读数在标准挡位下是空的，且原地松手会被误记成「自定义」**

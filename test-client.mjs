@@ -18,8 +18,11 @@
 import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const SRC = 'C:/Users/JQW/Documents/deepseek-harness/default-workspace/dsh-ui-fit/client.js'
+/* 相对本文件定位，换机器 / 换 clone 目录都不用改。 */
+const SRC = join(dirname(fileURLToPath(import.meta.url)), 'client.js')
 
 /* ---------------- 假 DOM ---------------- */
 
@@ -34,6 +37,16 @@ const fakeFoot = {
   removeAttribute: (name) => footAttrs.delete(name),
 }
 const fakeTrigger = { parentElement: fakeFoot }
+
+/**
+ * 槽位锚点 `[data-slot="sidebar.panellist"]` 的替身。
+ *
+ * 真实 DOM 里这些锚点是 `<div data-slot="sidebar.panellist" style="display:contents">`，
+ * 插件的 `tagNav()` 用 `anchor.closest('nav')` 往上找到面板 `<nav>`。这里让 `closest`
+ * 返回 `fakeNav`，就能验证「走契约锚点」这条路径——把 `fakeNav.className` 改成别的
+ * （模拟宿主换哈希类名）也仍然能标记上。
+ */
+let panelAnchors = [{ closest: (sel) => (sel === 'nav' ? fakeNav : null) }]
 
 const fakeNav = {
   className: 'wtg9ga_panelList',
@@ -201,6 +214,7 @@ const document = {
     if (selector === '[data-dsh-fit-foot]') return footAttrs.has('data-dsh-fit-foot') ? [fakeFoot] : []
     if (selector === '[data-dsh-fit-navlist]') return navAttrs.has('data-dsh-fit-navlist') ? [fakeNav] : []
     if (selector === '[data-conversation-content]') return [fakeWidthRoot]
+    if (selector === '[data-slot="sidebar.panellist"]') return panelAnchors
     return []
   },
   querySelector: (selector) => {
@@ -390,6 +404,27 @@ assert.equal(htmlAttrs.get('data-dsh-fit-width'), 'on', '宽度段默认开')
 assert.equal(htmlAttrs.get('data-dsh-fit-navmode'), undefined, '标准态不打三态属性')
 assert.ok(navAttrs.has('data-dsh-fit-navlist'), '面板 nav 已标记')
 assert.ok(footAttrs.has('data-dsh-fit-foot'), '页脚那一排已标记')
+
+/* ---------------- 导航锚点走契约，不靠哈希类名 ---------------- */
+
+/* 宿主改版把哈希类名换掉（`wtg9ga_panelList` → 别的），类名判据必然失效；
+   此时应当靠 `[data-slot="sidebar.panellist"]` 锚点仍然认出面板 nav。 */
+const originalClassName = fakeNav.className
+fakeNav.className = 'zzz_renamed_9f2c1'
+navAttrs.clear()
+const cleanupAnchor = bundle.apply(makeCtx())
+assert.ok(navAttrs.has('data-dsh-fit-navlist'), '哈希类名变了，靠槽位锚点仍能标记面板 nav')
+cleanupAnchor()
+navAttrs.clear()
+
+/* 锚点也不存在时（更老的宿主），退回类名判据。 */
+panelAnchors = []
+fakeNav.className = originalClassName
+const cleanupFallback = bundle.apply(makeCtx())
+assert.ok(navAttrs.has('data-dsh-fit-navlist'), '没有锚点时退回类名判据')
+cleanupFallback()
+navAttrs.clear()
+panelAnchors = [{ closest: (sel) => (sel === 'nav' ? fakeNav : null) }]
 
 /* ---------------- 组件 ---------------- */
 
