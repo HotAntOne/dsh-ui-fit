@@ -356,6 +356,23 @@ assert.match(css, /data-dsh-fit-navmode="fold"/, '导航收纳规则存在')
 assert.match(css, /data-dsh-fit-composer="on"/, '输入条规则存在')
 assert.match(css, /data-dsh-fit-tight="on"/, '输入条窄行规则存在')
 assert.match(css, /data-dsh-fit-mobile="on"/, '手机密度规则存在')
+/* 专家按钮：窄屏压成纯图标。文字与箭头必须藏掉，按钮要回到方形图标位。 */
+assert.match(
+  css,
+  /html\[data-dsh-fit-mobile="on"\] \[data-composer-card\] \.aag-btn-wrap \.aag-btn-label/,
+  '手机端隐藏专家按钮文字',
+)
+assert.match(
+  css,
+  /html\[data-dsh-fit-mobile="on"\] \[data-composer-card\] \.aag-btn-wrap \.aag-btn-chevron\{display:none !important\}/,
+  '手机端隐藏专家按钮下拉箭头',
+)
+/* 桌面不能受影响：这条规则必须挂在 mobile 门控下，不能是裸的 `.aag-btn-label`。 */
+assert.equal(
+  /(^|\n)(?!html\[data-dsh-fit-mobile)[^\n]*\.aag-btn-label/.test(css),
+  false,
+  '专家按钮的隐藏规则只在手机端生效',
+)
 assert.match(
   css,
   /html:not\(\[data-dsh-fit-nav="on"\]\) \.dsh-fit-trigger\[data-mode\]\{display:none\}/,

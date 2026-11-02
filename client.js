@@ -259,6 +259,13 @@ window.__ModuleLoader__.load({
       'html[data-dsh-fit-mobile="on"] [data-conversation-tabs][role="tablist"]{gap:14px !important;flex-wrap:nowrap !important;min-width:0 !important;overflow-x:auto !important;overscroll-behavior-x:contain;scrollbar-width:none}',
       'html[data-dsh-fit-mobile="on"] [data-conversation-tabs][role="tablist"]::-webkit-scrollbar{display:none}',
       'html[data-dsh-fit-mobile="on"] [data-conversation-tabs][role="tablist"] [role="tab"]{min-height:20px !important;padding-bottom:5px !important;font-size:12px !important;flex:0 0 auto !important;white-space:nowrap !important}',
+      '/* 输入条「专家」按钮：默认是「图标 + 专家 + 箭头」共 74px，手机上输入条本来就挤。',
+      '   窄屏压成纯图标，与左右邻居同一套 28px/14px 节奏；桌面保持原样。 */',
+      'html[data-dsh-fit-mobile="on"] [data-composer-card] .aag-btn-wrap button{width:var(--dsh-fit-btn, 28px);height:var(--dsh-fit-btn, 28px);min-width:var(--dsh-fit-btn, 28px);padding:0;gap:0;justify-content:center;border-radius:999px}',
+      'html[data-dsh-fit-mobile="on"] [data-composer-card] .aag-btn-wrap .aag-btn-label,',
+      'html[data-dsh-fit-mobile="on"] [data-composer-card] .aag-btn-wrap .aag-btn-chevron{display:none !important}',
+      'html[data-dsh-fit-mobile="on"] [data-composer-card] .aag-btn-wrap button span[class*="_icon"]{width:var(--dsh-fit-icon, 14px);height:var(--dsh-fit-icon, 14px)}',
+      'html[data-dsh-fit-mobile="on"] [data-composer-card] .aag-btn-wrap button span[class*="_icon"] svg{width:var(--dsh-fit-icon, 14px);height:var(--dsh-fit-icon, 14px)}',
 
       /* ---------------- ④ 设置页 ---------------- */
       /* 这一段不归任何开关管：设置页本身永远要能打开，否则关掉之后就再也开不回来。 */
