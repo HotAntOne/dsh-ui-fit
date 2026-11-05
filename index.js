@@ -20,7 +20,7 @@ import z from '@deepseek-ai/schemastery'
 /** 插件名，与 cordis.patch.yml 的行 id 一致。 */
 export const name = 'dsh-ui-fit'
 
-/** 四个功能开关；默认全开，与合并前的行为完全一致。 */
+/** 五个功能开关；默认全开，与合并前的行为完全一致。 */
 export const Config = z.object({
   nav: z
     .boolean()
@@ -55,6 +55,15 @@ export const Config = z.object({
       '对话宽度：左栏底部再添一颗宽度入口，提供标准 / 中 / 宽 / 超宽 / 满宽 / 自定义六档，' +
         '直接改对话区的内容宽度；拖动对话区两侧的手柄也会自动记成自定义。' +
         '这一项由本插件自己实现，不再需要第三方宽度插件。',
+    )
+    .volatile(),
+  credits: z
+    .boolean()
+    .default(true)
+    .description(
+      '手机端隐藏 WorkBuddy 积分读数：只在窄屏（≤ 899px）藏掉输入框旁一直显示的' +
+        '「WB CN · 积分」读数（两处座位共用同一个类，一条规则覆盖），桌面照常显示；' +
+        '点开的积分明细面板仍保留。没装 WorkBuddy 时无副作用。',
     )
     .volatile(),
 })

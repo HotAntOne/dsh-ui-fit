@@ -1,7 +1,7 @@
 {
   "name": "dsh-ui-fit",
-  "version": "1.2.3",
-  "description": "One plugin for three switchable UI refinements in the DSH Web GUI: foldable left navigation, a tidier composer row, and phone-density compaction.",
+  "version": "1.2.4",
+  "description": "One plugin for five switchable UI refinements in the DSH Web GUI: foldable left navigation, a tidier composer row, phone-density compaction, conversation width tiers, and hiding the WorkBuddy credit readout on phones only.",
   "type": "module",
   "main": "index.js",
   "license": "Apache-2.0",

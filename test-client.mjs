@@ -356,6 +356,17 @@ assert.match(css, /data-dsh-fit-navmode="fold"/, '导航收纳规则存在')
 assert.match(css, /data-dsh-fit-composer="on"/, '输入条规则存在')
 assert.match(css, /data-dsh-fit-tight="on"/, '输入条窄行规则存在')
 assert.match(css, /data-dsh-fit-mobile="on"/, '手机密度规则存在')
+/* 积分隐藏：一条规则覆盖 WorkBuddy 两处座位共用的读数类，必须同时挂在
+   899px 媒体查询（仅手机端，桌面照常显示）与自己的 credits 门控下。 */
+assert.ok(
+  css.includes('@media (max-width: 899px){html[data-dsh-fit-credits="on"] .dsm-workbuddy-composer-credits{display:none !important}}'),
+  '积分读数隐藏规则存在，且被 899px 媒体查询与 credits 门控双重限定',
+)
+assert.ok(
+  css.split('\n').filter((line) => line.includes('.dsm-workbuddy-composer-credits{display:none'))
+    .every((line) => line.startsWith('@media (max-width: 899px){html[data-dsh-fit-credits="on"]')),
+  '积分读数只在窄屏且 credits 开关打开时隐藏（没有无媒体查询/无门控的裸规则，桌面不受影响）',
+)
 /* 专家按钮：窄屏压成纯图标。文字与箭头必须藏掉，按钮要回到方形图标位。 */
 assert.match(
   css,
@@ -418,6 +429,7 @@ assert.equal(htmlAttrs.get('data-dsh-fit-composer'), 'on', '输入条默认开')
 assert.equal(htmlAttrs.get('data-dsh-fit-mobile'), 'on', '手机密度默认开（matchMedia 命中）')
 assert.equal(htmlAttrs.get('data-dsh-fit-tight'), 'on', '行宽 400 < 560，窄行标记生效')
 assert.equal(htmlAttrs.get('data-dsh-fit-width'), 'on', '宽度段默认开')
+assert.equal(htmlAttrs.get('data-dsh-fit-credits'), 'on', '积分隐藏默认开')
 assert.equal(htmlAttrs.get('data-dsh-fit-navmode'), undefined, '标准态不打三态属性')
 assert.ok(navAttrs.has('data-dsh-fit-navlist'), '面板 nav 已标记')
 assert.ok(footAttrs.has('data-dsh-fit-foot'), '页脚那一排已标记')
@@ -637,7 +649,7 @@ const cleanup3 = bundle.apply(
           get: (ns) => {
             assert.equal(ns, 'dsh-ui-fit', '命名空间等于行 id')
             return {
-              getSnapshot: () => ({ value: { nav: false, composer: false, mobile: false } }),
+              getSnapshot: () => ({ value: { nav: false, composer: false, mobile: false, credits: false } }),
               subscribe: () => () => {},
             }
           },
@@ -653,6 +665,7 @@ assert.equal(htmlAttrs.has('data-dsh-fit-navmode'), false, '关掉导航：三�
 assert.equal(htmlAttrs.has('data-dsh-fit-composer'), false, '关掉输入条：属性摘掉')
 assert.equal(htmlAttrs.has('data-dsh-fit-tight'), false, '关掉输入条：窄行标记也摘掉')
 assert.equal(htmlAttrs.has('data-dsh-fit-mobile'), false, '关掉手机密度：属性摘掉')
+assert.equal(htmlAttrs.has('data-dsh-fit-credits'), false, '关掉积分隐藏：属性摘掉，读数恢复显示')
 assert.equal(htmlAttrs.get('data-dsh-fit'), 'on', '根标记保留（插件还在）')
 cleanup3()
 
@@ -697,7 +710,7 @@ cleanup3b()
 const setCalls = []
 let settingsSection
 const settingsForm = {
-  getSnapshot: () => ({ value: { nav: true, composer: true, mobile: true } }),
+  getSnapshot: () => ({ value: { nav: true, composer: true, mobile: true, width: true, credits: true } }),
   subscribe: () => () => {},
   set: (field, value) => {
     setCalls.push([field, value])
@@ -729,16 +742,20 @@ const settingsTree = settingsSection({ t, close: () => {} })
 assert.equal(settingsTree.type, 'div')
 assert.equal(settingsTree.props.className, 'dsh-fit-settings')
 assert.equal(settingsTree.props['data-dsh-fit-settings'], '', '带自己的根标记')
-assert.equal(settingsTree.children.length, 7, '标题 + 说明 + 四行开关 + 存储说明')
+assert.equal(settingsTree.children.length, 8, '标题 + 说明 + 五行开关 + 存储说明')
 assert.equal(settingsTree.children[0].type, 'h2')
 assert.equal(settingsTree.children[0].children[0], 'L:settings.title', '标题走 locale')
 assert.equal(settingsTree.children[1].props.className, 'dsh-fit-settings-desc')
-assert.equal(settingsTree.children[6].props.className, 'dsh-fit-settings-note', '存储说明在最后')
-/* 第四行是宽度开关，顺序必须与 Config 字段一致，否则开关会串位。 */
+assert.equal(settingsTree.children[7].props.className, 'dsh-fit-settings-note', '存储说明在最后')
+/* 第四行是宽度、第五行是积分隐藏，顺序必须与 Config 字段一致，否则开关会串位。 */
 const widthRowElement = settingsTree.children[5]
 assert.equal(widthRowElement.props.field, 'width', '第四行是宽度开关')
 assert.equal(widthRowElement.props.title, 'L:settings.width.title')
 assert.equal(widthRowElement.props.description, 'L:settings.width.description')
+const creditsRowElement = settingsTree.children[6]
+assert.equal(creditsRowElement.props.field, 'credits', '第五行是积分隐藏开关')
+assert.equal(creditsRowElement.props.title, 'L:settings.credits.title')
+assert.equal(creditsRowElement.props.description, 'L:settings.credits.description')
 
 const navRowElement = settingsTree.children[2]
 assert.equal(typeof navRowElement.type, 'function', '行是组件')

@@ -1,5 +1,28 @@
 # 更新记录
 
+## 1.2.4
+
+**新增第五个开关：仅在手机端隐藏 WorkBuddy 的积分读数**
+
+`dsh-connect-workbuddy` 会在输入框右侧常驻显示「WB CN · 8,992」这类积分余额，
+这一版把它收进本插件，作为一个可单独开关的功能——**只在手机端隐藏，桌面照常显示**：
+
+- 新增 `credits` 开关（默认开 = 手机端隐藏）与门控属性 `data-dsh-fit-credits`，
+  `index.js` 的 `Config`、`client.js` 的 flags/paint/sync/isOurs/设置页/cleanup 全链路打通。
+- 一条规则被 `@media (max-width: 899px)` 框住：
+  `html[data-dsh-fit-credits="on"] .dsm-workbuddy-composer-credits{display:none !important}`
+  同时覆盖两处座位：`registerComposerCredits()`（conversation.input.right）与
+  `registerStatsCredits()`（conversation.composer.dock）共用同一个类。桌面（> 899px）不命中，
+  读数照常显示。用媒体查询而不是挂 `data-dsh-fit-mobile`，是为了让 credits 开关独立——
+  关掉「手机端密度」不会让手机上的读数冒出来。
+- **只藏常驻读数，不藏查看明细的能力**：点击后弹出的 `.dsm-workbuddy-composer-panel`
+  是 portal 到 body 的，不在这条规则里。
+- 没装 WorkBuddy 时选择器自然不匹配，静默失效；`check-hooks.mjs` 的新钩子带
+  `owner: 'dsh-connect-workbuddy'`，全新机器上不装也会跳过而非判失配。
+
+测试同步：新增 899px 媒体查询 + credits 双门控断言与裸规则反向守卫、默认属性、关掉开关后
+属性摘掉、设置页第 5 行与 `children.length` 7→8 断言。`npm test` 四段全绿。
+
 ## 1.2.3
 
 **手机端：「专家」按钮从 74px 文字按钮压成 28px 纯图标**

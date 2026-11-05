@@ -1,21 +1,24 @@
 /**
  * `dsh-ui-fit` 的浏览器半边。
  *
- * 一个插件、三段互相独立的样式模块，每段有自己的 `<html>` 门控属性：
+ * 一个插件、五段互相独立的样式模块，每段有自己的 `<html>` 门控属性：
  *
  * | 模块 | 开关属性 | 作用 |
  * |---|---|---|
  * | 左栏导航 | `data-dsh-fit-nav` | 三态折叠（标准/紧凑/收纳）、页脚切换按钮 |
  * | 输入条   | `data-dsh-fit-composer` | 藏语音键、徽章改图标、窄行收紧间距并铺满宽度 |
- * | 手机密度 | `data-dsh-fit-mobile` | 窄屏十组压缩规则 |
+ * | 手机密度 | `data-dsh-fit-mobile` | 窄屏九组压缩规则 |
  * | 对话宽度 | `data-dsh-fit-width` | 六档内容宽度 + 拖拽读数；自实现，不依赖第三方插件 |
+ * | 积分隐藏 | `data-dsh-fit-credits` + `data-dsh-fit-mobile` | 仅手机端藏掉输入框旁 WorkBuddy 的积分读数，桌面照常显示 |
  *
- * 三段开关来自 Host 半边的 `Config`（`ctx.configForms.get('dsh-ui-fit')`）。关掉某一段时
+ * 五段开关来自 Host 半边的 `Config`（`ctx.configForms.get('dsh-ui-fit')`）。关掉某一段时
  * 直接摘掉它的门控属性，**该段的每一条规则随之失效**——不是把按钮藏起来，所以关掉就
  * 真的回到宿主原样。
  *
- * 样式表内部顺序固定为：变量 → 导航 → 输入条 → 手机密度。手机密度在最后，因此窄屏
- * 规则天然压过前两段，与合并前三个插件共存时的层叠结果一致。
+ * 样式表内部顺序固定为：变量 → 导航+宽度 → 输入条 → 手机密度 → 积分隐藏 → 设置页。
+ * 手机密度与积分隐藏在后面，窄屏规则天然压过前两段；其中积分隐藏只在手机端生效
+ * （用 899px 媒体查询框住，桌面照常显示），且只归自己的 credits 开关管，不与
+ * 手机密度开关耦合。设置页永远在最后且不挂任何开关，否则关掉之后就再也开不回来。
  *
  * 硬约束（都是踩过的坑）：
  * - 不 `import` 任何 `@deepseek-ai/*`，primitive 只在模块表真的提供时才用；
@@ -63,6 +66,8 @@ window.__ModuleLoader__.load({
     const FOOT_SLOT_SELECTOR = '[data-slot="sidebar.footer.action"]'
     /** 宽度挡位插件是否存在。 */
     const ATTR_WIDTH = 'data-dsh-fit-width'
+    /** 模块开关：仅在手机端隐藏 WorkBuddy 积分读数。 */
+    const ATTR_CREDITS = 'data-dsh-fit-credits'
 
     /** 页脚按钮类名。 */
     const TRIGGER_CLASS = 'dsh-fit-trigger'
@@ -110,11 +115,11 @@ window.__ModuleLoader__.load({
     }
 
     /* ================================================================== */
-    /* 样式：变量 → 导航 → 输入条 → 手机密度                               */
+    /* 样式：变量 → 导航+宽度 → 输入条 → 手机密度 → 积分隐藏 → 设置页      */
     /* ================================================================== */
 
     const CSS = [
-      '/* 三段共用的控件直径：390px → 28px，768px → 31px，1440px → 36px。',
+      '/* 导航图标与输入条按钮共用的控件直径：390px → 28px，768px → 31px，1440px → 36px。',
       '   导航图标、输入条按钮都读这一个数，改这里一处即可。 */',
       'html[data-dsh-fit] { --dsh-fit-ctl: clamp(28px, 1.5vw + 20px, 36px); }',
 
@@ -267,7 +272,23 @@ window.__ModuleLoader__.load({
       'html[data-dsh-fit-mobile="on"] [data-composer-card] .aag-btn-wrap button span[class*="_icon"]{width:var(--dsh-fit-icon, 14px);height:var(--dsh-fit-icon, 14px)}',
       'html[data-dsh-fit-mobile="on"] [data-composer-card] .aag-btn-wrap button span[class*="_icon"] svg{width:var(--dsh-fit-icon, 14px);height:var(--dsh-fit-icon, 14px)}',
 
-      /* ---------------- ④ 设置页 ---------------- */
+      /* ---------------- ④ 积分隐藏（仅手机端） ---------------- */
+      /* WorkBuddy（dsh-connect-workbuddy v5.17.0）在输入框旁渲染「WB CN · 8,992」这类
+         积分读数。registerComposerCredits()（conversation.input.right）与
+         registerStatsCredits()（conversation.composer.dock）两处座位共用同一个类
+         .dsm-workbuddy-composer-credits，一条规则同时覆盖；设成 display:none 而非
+         visibility，省掉它占的那 87×22。
+         点击后弹出的明细面板 .dsm-workbuddy-composer-panel 是 portal 到 body 的，
+         不在这条规则里，别一并藏掉——藏的是「常驻读数」，不是「查看明细的能力」。
+
+         只在手机端隐藏：用 899px 媒体查询把规则框住（与 JS 里 MOBILE_QUERY 的阈值一致，
+         改阈值要两处一起改），桌面窗口（> 899px）照常显示，符合「电脑上不需要不显示」的口径。
+         用媒体查询而不是挂 data-dsh-fit-mobile 门控，是为了让 credits 开关独立：关掉
+         「手机端密度」不该让手机上的积分读数冒出来。规则仍挂在自己的 credits 门控下：
+         关掉开关，手机端读数也恢复；没装 WorkBuddy 时选择器自然不匹配，静默失效。 */
+      '@media (max-width: 899px){html[data-dsh-fit-credits="on"] .dsm-workbuddy-composer-credits{display:none !important}}',
+
+      /* ---------------- ⑤ 设置页 ---------------- */
       /* 这一段不归任何开关管：设置页本身永远要能打开，否则关掉之后就再也开不回来。 */
       'html[data-dsh-fit] .dsh-fit-settings{box-sizing:border-box;display:flex;flex-direction:column;gap:14px;width:100%;max-width:720px;padding:16px}',
       'html[data-dsh-fit] .dsh-fit-settings h2{margin:0;font-size:16px;line-height:24px;color:var(--dsw-alias-label-primary)}',
@@ -310,7 +331,7 @@ window.__ModuleLoader__.load({
         'width.full': '满宽',
         'width.custom': '自定义',
         'settings.title': '界面精简',
-        'settings.description': '四块样式各管一处，关掉哪一块就立刻回到宿主原样，不用重启。',
+        'settings.description': '五块样式各管一处，关掉哪一块就立刻回到宿主原样，不用重启。',
         'settings.nav.title': '左栏导航折叠',
         'settings.nav.description':
           '在侧栏页脚加一颗三态按钮：标准 → 紧凑 → 收纳。收纳后所有面板行都进「更多」，仍然可达。',
@@ -323,6 +344,9 @@ window.__ModuleLoader__.load({
         'settings.width.title': '对话宽度挡位',
         'settings.width.description':
           '页脚加一颗宽度入口：标准 / 中 / 宽 / 超宽 / 满宽 / 自定义六档，拖动对话区两侧手柄也会自动记成自定义。不需要再装宽度插件。',
+        'settings.credits.title': '手机端隐藏 WorkBuddy 积分读数',
+        'settings.credits.description':
+          '只在手机端把输入框旁边常驻的「WB CN · 积分」读数藏掉，桌面照常显示；积分明细面板仍可点开查看。没装 WorkBuddy 时这一项没有副作用。',
         'settings.storage':
           '默认全部开启。开关写在本机 profile 的 dsh-ui-fit 配置段；导航三态存 localStorage 的 dsh-ui-fit:nav，宽度挡位存 dsh-ui-fit:width。',
         'settings.failed': '写入失败，这一项没有生效，请重试。',
@@ -349,7 +373,7 @@ window.__ModuleLoader__.load({
         'width.custom': 'custom',
         'settings.title': 'UI Fit',
         'settings.description':
-          'Four independent style modules. Turning one off restores the stock UI immediately, no restart.',
+          'Five independent style modules. Turning one off restores the stock UI immediately, no restart.',
         'settings.nav.title': 'Collapsible left navigation',
         'settings.nav.description':
           'Adds a three-state footer button: standard → compact → folded. Folded rows stay reachable inside More.',
@@ -362,6 +386,9 @@ window.__ModuleLoader__.load({
         'settings.width.title': 'Conversation width tiers',
         'settings.width.description':
           'Adds a footer width entry: standard / medium / wide / ultra / full / custom. Dragging the conversation handles records a custom width too. The separate width plugin is no longer needed.',
+        'settings.credits.title': 'Hide WorkBuddy credit balance on phones',
+        'settings.credits.description':
+          'Hides the always-on "WB CN · credits" readout next to the composer on phones only; desktop keeps showing it. The credit detail panel still opens. No effect when WorkBuddy is not installed.',
         'settings.storage':
           'All on by default. Switches live in this profile dsh-ui-fit config; the navigation state also lives in localStorage key dsh-ui-fit:nav, the width tier in dsh-ui-fit:width.',
         'settings.failed': 'Write failed; that change did not apply. Try again.',
@@ -372,11 +399,11 @@ window.__ModuleLoader__.load({
     }
 
     /* ================================================================== */
-    /* 状态：三个开关 + 导航三态 + 窄行标记                                 */
+    /* 状态：五个开关 + 导航三态 + 窄行标记                                 */
     /* ================================================================== */
 
-    /** 四个模块开关；Host 配置还没到时先全开，与合并前一致。 */
-    const flags = { nav: true, composer: true, mobile: true, width: true }
+    /** 五个模块开关；Host 配置还没到时先全开，与合并前一致。 */
+    const flags = { nav: true, composer: true, mobile: true, width: true, credits: true }
 
     /** 配置是否已经认领到（设置页据此显示可用状态）。 */
     let flagsReady = false
@@ -395,7 +422,7 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** 订阅三个开关；设置页用它重绘。 */
+    /** 订阅五个开关；设置页用它重绘。 */
     function useFlags() {
       const [value, setValue] = useState(0)
       useEffect(() => {
@@ -405,7 +432,7 @@ window.__ModuleLoader__.load({
           flagListeners.delete(listener)
         }
       }, [])
-      return { nav: flags.nav, composer: flags.composer, mobile: flags.mobile, width: flags.width, ready: flagsReady, tick: value }
+      return { nav: flags.nav, composer: flags.composer, mobile: flags.mobile, width: flags.width, credits: flags.credits, ready: flagsReady, tick: value }
     }
 
     /**
@@ -428,7 +455,7 @@ window.__ModuleLoader__.load({
     /** @type {Set<() => void>} */
     const modeListeners = new Set()
 
-    /** 把四个开关与三态写到 `<html>` 上，CSS 据此生效或失效。 */
+    /** 把五个开关与三态写到 `<html>` 上，CSS 据此生效或失效。 */
     function paint() {
       if (typeof document === 'undefined') return
       const root = document.documentElement
@@ -445,6 +472,9 @@ window.__ModuleLoader__.load({
       /* 宽度段自己也是门控属性：关掉就整段失效，宽度退回宿主默认。 */
       if (flags.width) root.setAttribute(ATTR_WIDTH, 'on')
       else root.removeAttribute(ATTR_WIDTH)
+      /* 积分隐藏段：关掉就摘掉属性，手机端 WorkBuddy 读数恢复显示；桌面始终照常显示。 */
+      if (flags.credits) root.setAttribute(ATTR_CREDITS, 'on')
+      else root.removeAttribute(ATTR_CREDITS)
     }
 
     /** 切换三态，持久化并通知所有挂载的控件。 */
@@ -1063,7 +1093,7 @@ window.__ModuleLoader__.load({
      * 「界面精简」设置页。
      *
      * 宿主不会按 Config schema 自动生成页面（`@deepseek-ai/dsh-settings` 的 README 明写
-     * 目前没有自带客户端这么做），所以必须自己注册 `settings.section`。三个开关直接写
+     * 目前没有自带客户端这么做），所以必须自己注册 `settings.section`。五个开关直接写
      * 本插件的配置命名空间，写成功后 Host 广播、`sync` 重新 paint，页面与样式同步变化。
      */
     function SettingsSection(props) {
@@ -1076,6 +1106,7 @@ window.__ModuleLoader__.load({
         { field: 'composer', title: t('settings.composer.title'), description: t('settings.composer.description') },
         { field: 'mobile', title: t('settings.mobile.title'), description: t('settings.mobile.description') },
         { field: 'width', title: t('settings.width.title'), description: t('settings.width.description') },
+        { field: 'credits', title: t('settings.credits.title'), description: t('settings.credits.description') },
       ]
       const toggle = (field, next) => {
         setFailed(null)
@@ -1124,7 +1155,7 @@ window.__ModuleLoader__.load({
 
         paint()
 
-        /* 样式表：只有一张，三段规则都在里面，靠 `<html>` 属性分段生效。 */
+        /* 样式表：只有一张，五段规则都在里面，靠 `<html>` 属性分段生效。 */
         push(
           ctx.effect(() => {
             const tag = document.createElement('style')
@@ -1259,7 +1290,7 @@ window.__ModuleLoader__.load({
             const isOurs = (value) =>
               value !== null &&
               typeof value === 'object' &&
-              ('composer' in value || 'mobile' in value || 'nav' in value)
+              ('composer' in value || 'mobile' in value || 'nav' in value || 'credits' in value)
 
             let bound = null
             let boundNs = null
@@ -1305,6 +1336,7 @@ window.__ModuleLoader__.load({
               flags.composer = value.composer !== false
               flags.mobile = value.mobile !== false
               flags.width = value.width !== false
+              flags.credits = value.credits !== false
               flagsReady = true
               paint()
               paintMobile()
@@ -1516,6 +1548,7 @@ window.__ModuleLoader__.load({
             root.removeAttribute(ATTR_TIGHT)
             root.removeAttribute(ATTR_MOBILE)
             root.removeAttribute(ATTR_WIDTH)
+            root.removeAttribute(ATTR_CREDITS)
             for (const nav of document.querySelectorAll('[' + ATTR_NAVLIST + ']')) nav.removeAttribute(ATTR_NAVLIST)
             for (const foot of document.querySelectorAll('[' + ATTR_FOOT + ']')) foot.removeAttribute(ATTR_FOOT)
             const box = document.getElementById('dsh-fit-debug')

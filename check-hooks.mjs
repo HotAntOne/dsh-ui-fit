@@ -88,6 +88,9 @@ const HOOKS = [
   { needle: '_actions', label: '手机：消息操作行类名后缀' },
   { needle: '_endInfo', label: '手机：时间戳容器类名后缀' },
   { needle: '_timeStart', label: '手机：时间戳类名后缀' },
+
+  /* ---- 五、积分隐藏（仅手机端） ---- */
+  { needle: 'dsm-workbuddy-composer-credits', label: '积分隐藏：WorkBuddy 读数（两处座位共用一个类，仅窄屏）', owner: 'dsh-connect-workbuddy' },
 ]
 
 const args = process.argv.slice(2)

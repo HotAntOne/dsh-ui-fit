@@ -1,7 +1,8 @@
 # 界面精简（dsh-ui-fit）
 
-一个插件，管四件事：**左栏导航折叠**、**输入条精简**、**手机端密度压缩**、**对话宽度挡位**。
-四块可以分别开关，关掉哪一块，那一块就完全回到宿主原样——不是把按钮藏起来，是那一段
+一个插件，管五件事：**左栏导航折叠**、**输入条精简**、**手机端密度压缩**、**对话宽度挡位**、
+**手机端隐藏 WorkBuddy 积分读数**（桌面照常显示）。
+五块可以分别开关，关掉哪一块，那一块就完全回到宿主原样——不是把按钮藏起来，是那一段
 样式真的失效。
 
 前三块合并前分散在三个独立插件里，各管一处界面，却各自往 `<html>` 上挂自己的开关属性、
@@ -65,7 +66,7 @@ cd /绝对路径/dsh-ui-fit && npm run setup
 
 ## 装完之后在哪
 
-**设置（左下角账号菜单 → 设置）→ 左列「界面精简」**，四个开关：
+**设置（左下角账号菜单 → 设置）→ 左列「界面精简」**，五个开关：
 
 | 开关 | 默认 | 管什么 |
 |---|---|---|
@@ -73,6 +74,7 @@ cd /绝对路径/dsh-ui-fit && npm run setup
 | 输入条 | 开 | 藏掉语音按钮，模式 / 计划 / PUA 三个控件改纯图标；输入条变窄时自动收紧 |
 | 手机端密度 | 开 | 只在窗口宽度 ≤ 899 像素时生效，压缩手机上的各类留白 |
 | 对话宽度 | 开 | 左栏底部加一颗宽度按钮，六档内容宽度；拖动对话区两侧手柄也会记成自定义 |
+| 手机端隐藏积分 | 开 | 只在手机端藏掉输入框旁 WorkBuddy 常驻的「WB CN · 积分」读数，桌面照常显示；明细面板仍可点开（见第五节） |
 
 默认全开，与合并前完全一致。
 
@@ -194,11 +196,32 @@ cd /绝对路径/dsh-ui-fit && npm run setup
 
 ---
 
-## 五、验证
+## 五、仅在手机端隐藏 WorkBuddy 积分读数
+
+`dsh-connect-workbuddy`（WorkBuddy）会在输入框右侧常驻一颗「WB CN · 8,992」积分余额。
+按口径**只在手机端把它藏掉，桌面（> 899px）照常显示**：
+
+- 开关 `credits`（默认开 = 手机端隐藏）写入门控属性 `data-dsh-fit-credits`。
+- 一条规则被 `@media (max-width: 899px)` 框住：
+  `html[data-dsh-fit-credits="on"] .dsm-workbuddy-composer-credits{display:none !important}`
+  同时覆盖两处座位：`conversation.input.right`（默认）与 `conversation.composer.dock`
+  （设置里把读数挪到「输入框下面」时）共用同一个类。桌面不命中媒体查询，读数照常显示。
+  用媒体查询而不是挂 `data-dsh-fit-mobile`，是为了让 credits 开关独立——关掉「手机端密度」
+  不会让手机上的读数冒出来；899px 与 JS 里 `MOBILE_QUERY` 阈值一致，改要两处一起改。
+- **只藏常驻读数，不藏查看明细的能力**：点击弹出的 `.dsm-workbuddy-composer-panel`
+  是 portal 到 `document.body` 的，不在这条规则里，明细面板始终能打开。
+- 没装 WorkBuddy 时选择器自然不匹配，静默失效、无副作用。
+
+桌面窗口读数一直都在；只有把窗口缩到 899px 以下（或手机上）且开关打开时才隐藏。关掉开关，
+手机端读数立刻回来。
+
+---
+
+## 六、验证
 
 ```bash
 node --check client.js          # 语法
-node test-client.mjs            # 离线冒烟：四段规则、三态循环、宽度六档、开关失效、清理
+node test-client.mjs            # 离线冒烟：五段规则、三态循环、宽度六档、开关失效、清理
 node check-hooks.mjs            # 宿主升级后体检：CSS 钩子还在不在
 ```
 
@@ -229,18 +252,20 @@ node check-hooks.mjs            # 宿主升级后体检：CSS 钩子还在不在
 7. 把「输入条」关掉 → 麦克风回来、徽章恢复文字。
 8. 把「手机端密度」关掉 → 手机上的一切恢复原样。
 9. 把「对话宽度」关掉 → 柱状图图标消失、对话区回到宿主默认宽度。
-10. 关掉任意一个开关后按 Ctrl+R 刷新 → 状态保持（开关已落到 profile 的 `cordis.patch.yml`）。
-11. 关掉导航后仍能从设置页把开关打开 → 设置页自身不受开关影响。
+10. 桌面窗口下输入框旁「WB CN · 积分」读数照常显示；把窗口缩到 899px 以下（或手机）→ 读数消失，点开的明细面板始终可用；把「手机端隐藏积分」关掉 → 手机端读数恢复。
+11. 关掉任意一个开关后按 Ctrl+R 刷新 → 状态保持（开关已落到 profile 的 `cordis.patch.yml`）。
+12. 关掉导航后仍能从设置页把开关打开 → 设置页自身不受开关影响。
 
 ---
 
-## 六、实现要点
+## 七、实现要点
 
-- **一个文件、四段样式**。`client.js` 里 `CSS` 数组按「变量 → 导航 → 输入条 → 手机密度 →
-  设置页」排列。手机密度在最后，所以窄屏规则天然压过前两段，与三个插件共存时的层叠结果一致。
+- **一个文件、五段样式**。`client.js` 里 `CSS` 数组按「变量 → 导航+宽度 → 输入条 → 手机密度 →
+  积分隐藏 → 设置页」排列。手机密度在输入条之后，所以窄屏规则天然压过前两段；积分隐藏
+  自带 899px 媒体查询（仅手机端生效），在设置页之前，设置页自身不归任何开关管。
 - **门控属性**：`data-dsh-fit-nav` / `data-dsh-fit-composer` / `data-dsh-fit-mobile` /
-  `data-dsh-fit-width`，外加 `data-dsh-fit-navmode`（三态）和 `data-dsh-fit-tight`（实测窄行）。
-  关开关就是摘属性，规则随之失效。
+  `data-dsh-fit-width` / `data-dsh-fit-credits`，外加 `data-dsh-fit-navmode`（三态）和
+  `data-dsh-fit-tight`（实测窄行）。关开关就是摘属性，规则随之失效。
 - **认元素优先用宿主契约**：`[data-slot="sidebar.panellist"]`、`[data-slot="sidebar.footer.action"]`、
   `[data-conversation-content]`、`[data-sidebar-chat]` 都是渲染器写死的槽位名/属性，
   改版不动；`wtg9ga_panelList` 这类哈希类名只作兜底。
@@ -262,7 +287,7 @@ node check-hooks.mjs            # 宿主升级后体检：CSS 钩子还在不在
 
 ---
 
-## 七、兼容性
+## 八、兼容性
 
 | 端 | 合并前 | 合并后 |
 |---|---|---|
@@ -280,10 +305,12 @@ node check-hooks.mjs            # 宿主升级后体检：CSS 钩子还在不在
 |---|---|
 | 没装 `dsh-mobile` | 正常。页脚只对齐自己的按钮；`dsh-mobile` 那条 44px 反制规则静默失效 |
 | 没装 `dsh-better-input` / `@michengai/dsh-pua` / `dsh-cost-meter` | 正常。对应的对齐规则静默失效，不报错、不影响软件 |
+| 没装 `dsh-connect-workbuddy` | 正常。积分隐藏规则（仅手机端）选择器自然不匹配，静默失效；新钩子带 `owner` 会跳过 |
 | 没装任何第三方插件 | 正常。`npm test` 也通过（这 13 个钩子带 `owner` 标记，owner 没装就跳过并单独计数） |
 | 换一台没有 asar 的机器跑 `npm test` | `check-hooks.mjs` 按常见安装位置探测 asar；真找不到时用 `--asar <路径>` 指定 |
 
-依赖第三方的样式规则占比：输入条 9/28、手机密度 21/40；导航与宽度段**零依赖**。
+依赖第三方的样式规则占比：输入条 9/28、手机密度 21/40；积分隐藏段（仅手机端）1/1 全依赖
+WorkBuddy（但没装就静默失效）；导航与宽度段**零依赖**。
 
 ### 选择器用的是契约还是哈希类名
 
@@ -301,13 +328,13 @@ node check-hooks.mjs            # 宿主升级后体检：CSS 钩子还在不在
 
 | 项 | 存储 | 范围 | 默认 |
 |---|---|---|---|
-| 四个模块开关 | profile 的 `cordis.patch.yml` 对应行 `config:` | 账号级，多设备一致 | 全开 |
+| 五个模块开关 | profile 的 `cordis.patch.yml` 对应行 `config:` | 账号级，多设备一致 | 全开 |
 | 导航三态 | `localStorage` 的 `dsh-ui-fit:nav` | 设备级，每浏览器一份 | 标准 |
 | 宽度挡位 | `localStorage` 的 `dsh-ui-fit:width` | 设备级，每浏览器一份 | 标准 |
 | 自定义宽度 | `localStorage` 的 `dsh-ui-fit:widthCustom` | 设备级，每浏览器一份 | 未设置 |
 
 ---
 
-## 八、许可
+## 九、许可
 
 Apache-2.0，见 `LICENSE`。
